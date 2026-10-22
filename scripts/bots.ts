@@ -8,7 +8,13 @@
  */
 import { Client, type Room } from "@colyseus/sdk";
 import { PoseSender, SAMPLE_ROOM } from "@vcr/engine";
-import { JoinSessionResponse, LocoState, REALM_ROOM_NAME, RealmMessage } from "@vcr/protocol";
+import {
+  GuestLinkInfo,
+  JoinSessionResponse,
+  LocoState,
+  REALM_ROOM_NAME,
+  RealmMessage,
+} from "@vcr/protocol";
 
 const count = Number(process.argv[2] ?? 10);
 // Accepts the whole link (http://localhost:5173/join/<token>) or just the token.
@@ -77,6 +83,23 @@ async function startBot(i: number): Promise<Bot> {
     pauseUntil: 0,
   };
 }
+
+// Check the link once up front, so a stale one gets a plain explanation instead of a stack trace.
+const linkRes = await fetch(`${API}/guest/${guestToken}`).catch(() => null);
+if (!linkRes) {
+  console.error(`Can't reach the API at ${API}. Is \`pnpm dev\` running?`);
+  process.exit(1);
+}
+const link = linkRes.ok ? GuestLinkInfo.parse(await linkRes.json()) : null;
+if (!link?.live) {
+  console.error(
+    link
+      ? `That gathering has ended. Start a new one, then use Invite → Copy guest link.`
+      : `That guest link doesn't exist or has expired. In a live gathering, use Invite → Copy guest link.`,
+  );
+  process.exit(1);
+}
+console.log(`Joining ${link.hostName}'s gathering in ${link.roomName}…`);
 
 const bots = await Promise.all(Array.from({ length: count }, (_, i) => startBot(i)));
 console.log(`${bots.length} bots walking around for ${seconds}s`);
