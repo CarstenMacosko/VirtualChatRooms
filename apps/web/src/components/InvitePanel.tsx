@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ContactsResponse, SessionInfo } from "@vcr/protocol";
 import { api, ApiRequestError } from "../lib/api";
 import { useLive } from "../lib/live";
+import { publicOrigin, useShareUrl } from "../lib/share";
 
 const STATUS_LABEL = {
   ringing: "Ringing…",
@@ -17,6 +18,7 @@ export function InvitePanel(props: { sessionId: string; onClose(): void }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<string | null>(null);
   const sessionsVersion = useLive((s) => s.sessionsVersion);
+  const shareUrl = useShareUrl();
 
   useEffect(() => {
     void api.contacts().then(setContacts);
@@ -42,7 +44,8 @@ export function InvitePanel(props: { sessionId: string; onClose(): void }) {
   async function copyGuestLink() {
     try {
       const link = await api.createGuestLink(props.sessionId);
-      const url = `${window.location.origin}${link.path}`;
+      // While `pnpm share` runs, links point at the public address, not this computer.
+      const url = `${publicOrigin(shareUrl)}${link.path}`;
       await navigator.clipboard.writeText(url);
       setMessage("Guest link copied. It works until this gathering ends.");
     } catch (err) {

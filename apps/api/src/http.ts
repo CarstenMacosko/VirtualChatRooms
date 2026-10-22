@@ -31,3 +31,17 @@ export function readableIssues(error: z.ZodError): string {
 }
 
 export type IdParams = { Params: { id: string } };
+
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\]|[a-z0-9-]+\.localhost)(:\d+)?$/i;
+
+/**
+ * Whether a request comes from this machine, not from the internet through `pnpm share`'s
+ * tunnel (or any other proxy). Development shortcuts like the name-only sign-in check this, so a
+ * shared dev server can't be used to sign in as someone else.
+ */
+export function isLocalRequest(req: FastifyRequest): boolean {
+  // Cloudflare stamps every request it forwards.
+  if (req.headers["cf-ray"] || req.headers["cf-connecting-ip"]) return false;
+  const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "";
+  return LOCAL_HOST.test(Array.isArray(host) ? (host[0] ?? "") : host);
+}

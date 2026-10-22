@@ -19,3 +19,4 @@ Each record captures one decision from [PLAN.md § 2](../../PLAN.md#2-key-techni
 | [0013](0013-realm-mints-media-tokens.md)                           | The realm admits people and mints media tokens       | Accepted |
 | [0014](0014-avatars-are-recipes.md)                                | Avatars are recipes, generated on every client       | Accepted |
 | [0015](0015-clerk-accounts-exchanged-for-our-session.md)           | Clerk accounts, exchanged for our own session token  | Accepted |
+| [0016](0016-prototype-by-sharing-the-dev-server.md)                | Prototype by sharing the dev server; deploy later    | Accepted |

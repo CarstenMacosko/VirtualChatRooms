@@ -176,6 +176,19 @@ URL options: `?debug` for FPS and network stats (including which transport poses
 | Realm   | ws://localhost:2567   | Colyseus `session` room; mints LiveKit tokens and enforces host controls                                     |
 | LiveKit | ws://localhost:7880   | `livekit-server --dev` (key `devkey`, secret `secret`)                                                       |
 
+**Share with friends while you build.** With `pnpm dev` running, run this in a second terminal:
+
+```bash
+pnpm share
+```
+
+It prints a free, temporary `https://….trycloudflare.com` link (a Cloudflare quick tunnel: no account and no domain; one-time setup: `brew install cloudflared`). Anyone with the link reaches your dev server: they see your changes the moment you save, and can join your gatherings.
+
+- **You:** keep using http://localhost:5173. Copied guest links point at the public link automatically, and home shows a "Sharing live" banner.
+- **Visitors:** join with a guest link (no account needed). With Clerk keys set, they can also make real accounts at the link. The name-only development sign-in never works through the link, so nobody can sign in as you.
+- **Voice and video for visitors:** put LiveKit Cloud keys (free tier) in `.env` as `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`, then restart `pnpm dev`. Your local LiveKit server can't be reached from outside your network.
+- **Limits:** the link changes every time you start sharing, and only works while your computer and `pnpm dev` are running. For an always-on address, see [ADR 0016](docs/adr/0016-prototype-by-sharing-the-dev-server.md).
+
 With the servers running, check everything end to end:
 
 ```bash

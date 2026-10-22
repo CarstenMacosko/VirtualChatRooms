@@ -28,9 +28,9 @@ export class ClerkIdentity implements IdentityProvider {
     const payload = await verifyToken(token, {
       secretKey: this.env.CLERK_SECRET_KEY,
       ...(this.env.CLERK_JWT_KEY && { jwtKey: this.env.CLERK_JWT_KEY }),
-      // Only sessions created on our own web app count.
-      authorizedParties: [this.env.WEB_ORIGIN],
     });
+    // Only sessions created on our own web app count.
+    if (!isAllowedParty(payload.azp, this.env)) throw new Error(`unexpected origin ${payload.azp}`);
     if (!payload.sub) throw new Error("token has no subject");
     return { id: payload.sub };
   }
@@ -45,6 +45,18 @@ export class ClerkIdentity implements IdentityProvider {
   async deleteAccount(id: string) {
     await this.client.users.deleteUser(id);
   }
+}
+
+const SHARE_ORIGIN = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
+
+/**
+ * Which web origins may sign people in: the configured one, plus (in development) a
+ * `pnpm share` tunnel address, which changes every time sharing starts.
+ */
+export function isAllowedParty(azp: unknown, env: Pick<Env, "WEB_ORIGIN" | "NODE_ENV">): boolean {
+  if (azp === undefined) return true; // tokens minted server-side carry no origin
+  if (azp === env.WEB_ORIGIN) return true;
+  return env.NODE_ENV !== "production" && typeof azp === "string" && SHARE_ORIGIN.test(azp);
 }
 
 export function identityFromEnv(env: Env): IdentityProvider | null {

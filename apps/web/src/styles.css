@@ -999,3 +999,14 @@ label.check {
   margin: 4px 0 0;
   text-align: center;
 }
+
+.share-banner {
+  margin: 12px auto 0;
+  max-width: 1200px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: #1f3a33;
+}
+.share-banner a {
+  color: var(--ok);
+}

@@ -16,6 +16,15 @@ const Env = z.object({
   CLERK_SECRET_KEY: z.string().default(""),
   /** Optional: Clerk's JWT public key (PEM), to verify sessions without fetching keys. */
   CLERK_JWT_KEY: z.string().default(""),
+  /** Where `pnpm share` writes the current public link (read by `GET /dev/share`). */
+  SHARE_URL_FILE: z
+    .string()
+    .default(fileURLToPath(new URL("../../../.share-url", import.meta.url))),
+  /** Lets the name-only development sign-in work through `pnpm share`. Unsafe; tests only. */
+  ALLOW_REMOTE_DEV_LOGIN: z
+    .string()
+    .optional()
+    .transform((v) => v === "1" || v === "true"),
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
   /** Web Push (calls while the app is closed). Empty disables push; `pnpm dev` generates a pair. */
   VAPID_PUBLIC_KEY: z.string().default(""),

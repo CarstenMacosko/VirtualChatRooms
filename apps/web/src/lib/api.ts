@@ -14,6 +14,7 @@ import {
   RoomsResponse,
   SessionInfo,
   SessionsResponse,
+  ShareInfo,
   VapidKeyResponse,
   type DevLoginRequest,
   type ExchangeRequest,
@@ -116,6 +117,7 @@ export const api = {
   createGuestLink: (id: string) =>
     request(GuestLinkResponse, `/sessions/${id}/guest-links`, post()),
 
+  share: () => request(ShareInfo, "/dev/share"),
   vapidKey: () => request(VapidKeyResponse, "/push/vapid-key"),
   savePushSubscription: (body: PushSubscriptionRequest) =>
     request(NoContent, "/push/subscriptions", post(body)),

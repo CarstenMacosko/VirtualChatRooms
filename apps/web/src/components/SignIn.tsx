@@ -2,6 +2,7 @@ import { type FormEvent, useState } from "react";
 import { MIN_ACCOUNT_AGE } from "@vcr/protocol";
 import { api, ApiRequestError } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { viewingShared } from "../lib/share";
 
 export function SignIn() {
   const signIn = useAuth((s) => s.signIn);
@@ -30,6 +31,12 @@ export function SignIn() {
       <form className="card" onSubmit={onSubmit}>
         <h1>VirtualChatRooms</h1>
         <p className="muted">Hang out with friends and family as 3D avatars.</p>
+        {viewingShared() && (
+          <p className="callout">
+            This is a preview someone is sharing from their computer. To join their gathering, open
+            the guest link they sent you. Signing in here only works on their computer.
+          </p>
+        )}
         <p>
           <b>New here?</b> Enter your name and birthday to create your account. Use the same name
           later to sign back in.

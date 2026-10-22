@@ -14,7 +14,7 @@ import {
 import type { Services } from "../app";
 import { issueSessionToken, requireSession } from "../auth";
 import { users } from "../db/schema";
-import { parseBody, sendError } from "../http";
+import { isLocalRequest, parseBody, sendError } from "../http";
 import { ensureFriendCode } from "../social";
 
 const toPublicUser = (row: typeof users.$inferSelect): PublicUser => ({
@@ -50,6 +50,16 @@ export function authRoutes(app: FastifyInstance, ctx: Services) {
   // Development-only sign-in. Same display name → same user, so local testing is repeatable.
   if (env.NODE_ENV !== "production") {
     app.post("/auth/dev-login", async (req, reply) => {
+      // Name-only sign-in is for your own machine. Through a shared link, anyone could type your
+      // name and become you; they use guest links or real accounts there instead.
+      if (!isLocalRequest(req) && !env.ALLOW_REMOTE_DEV_LOGIN) {
+        return sendError(
+          reply,
+          403,
+          "dev_login_local_only",
+          "The development sign-in only works on the host's own computer. Ask for a guest link.",
+        );
+      }
       const body = parseBody(DevLoginRequest, req, reply);
       if (!body || tooYoung(body.birthDate, reply)) return;
       const [row] = await db

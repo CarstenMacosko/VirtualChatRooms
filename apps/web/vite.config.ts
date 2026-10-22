@@ -13,10 +13,19 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // `pnpm share` serves this dev server at a public *.trycloudflare.com address.
+    allowedHosts: [".trycloudflare.com"],
+    // Everything the browser needs comes from this one origin, so a single tunnel (or a single
+    // deployed domain) carries the whole app.
     proxy: {
       "/api": {
         target: "http://127.0.0.1:3001",
         rewrite: (path) => path.replace(/^\/api/, ""),
+      },
+      "/realm": {
+        target: "http://127.0.0.1:2567",
+        ws: true,
+        rewrite: (path) => path.replace(/^\/realm/, ""),
       },
     },
   },

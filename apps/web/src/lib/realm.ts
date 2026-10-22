@@ -16,7 +16,8 @@ import {
 } from "@vcr/protocol";
 import { ApiRequestError } from "./api";
 
-const REALM_URL = import.meta.env.VITE_REALM_URL ?? "ws://localhost:2567";
+/** The realm server: same origin as the page (proxied at /realm) unless configured otherwise. */
+const REALM_URL = import.meta.env.VITE_REALM_URL || `${window.location.origin}/realm`;
 
 export type RealmStatus =
   | "connecting"

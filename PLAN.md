@@ -608,6 +608,8 @@ Phase 5                                  █████████████
 
 Environments: `local` → `preview` (per pull request) → `staging` → `production`.
 
+**While prototyping (2026-10-22):** `pnpm share` puts the running dev server on a temporary public link, so friends can try changes the moment they're saved and join calls ([ADR 0016](docs/adr/0016-prototype-by-sharing-the-dev-server.md)). The deployed setup above comes later, when there should be an always-on address.
+
 ---
 
 ## 9. Risks & mitigations

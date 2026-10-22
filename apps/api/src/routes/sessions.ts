@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
@@ -10,6 +11,7 @@ import {
   type RealmTicketClaims,
   type RoomsResponse,
   type SessionsResponse,
+  type ShareInfo,
   StartSessionRequest,
 } from "@vcr/protocol";
 import type { Services } from "../app";
@@ -23,7 +25,7 @@ import {
   sessions,
   users,
 } from "../db/schema";
-import { type IdParams, parseBody, sendError } from "../http";
+import { type IdParams, isLocalRequest, parseBody, sendError } from "../http";
 import { acceptedContactIds } from "../social";
 import { avatarOf } from "./avatar";
 
@@ -258,10 +260,26 @@ export function sessionRoutes(app: FastifyInstance, ctx: Services) {
     return reply.code(201).send(await createGuestLink(row.session.id, me(req)));
   });
 
+  // Development only: the public link `pnpm share` is serving, so copied guest links point there
+  // even when the host is on localhost.
+  if (env.NODE_ENV !== "production") {
+    app.get("/dev/share", async (): Promise<ShareInfo> => {
+      try {
+        const url = (await readFile(env.SHARE_URL_FILE, "utf8")).trim();
+        return { url: /^https:\/\//.test(url) ? url : null };
+      } catch {
+        return { url: null };
+      }
+    });
+  }
+
   // Development only, like /auth/dev-login: a guest link into whichever gathering started most
   // recently, so `pnpm bots 10` works without copying a link out of the app.
   if (env.NODE_ENV !== "production") {
-    app.post("/dev/latest-guest-link", async (_req, reply) => {
+    app.post("/dev/latest-guest-link", async (req, reply) => {
+      if (!isLocalRequest(req)) {
+        return sendError(reply, 403, "local_only", "Only available on the host's computer.");
+      }
       const [latest] = await db
         .select({ id: sessions.id, hostId: sessions.hostId })
         .from(sessions)

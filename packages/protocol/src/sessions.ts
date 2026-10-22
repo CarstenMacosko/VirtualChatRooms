@@ -99,3 +99,7 @@ export const REALM_ISSUER = "vcr-realm";
 /** `GET /sessions`: live gatherings you host or were invited to, newest first. */
 export const SessionsResponse = z.object({ sessions: z.array(SessionInfo) });
 export type SessionsResponse = z.infer<typeof SessionsResponse>;
+
+/** `GET /dev/share`: the public link `pnpm share` is serving right now, if any. */
+export const ShareInfo = z.object({ url: z.string().nullable() });
+export type ShareInfo = z.infer<typeof ShareInfo>;

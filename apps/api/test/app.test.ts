@@ -21,8 +21,13 @@ import {
   RoomsResponse,
   SessionInfo,
   SessionsResponse,
+  ShareInfo,
 } from "@vcr/protocol";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { buildApp } from "../src/app";
+import { isAllowedParty } from "../src/identity";
 import { createDatabase, type DatabaseHandle } from "../src/db/client";
 import { parseEnv } from "../src/env";
 
@@ -733,5 +738,66 @@ describe("real accounts (provider exchange)", () => {
       payload: { providerToken: "valid:x" },
     });
     expect(res.statusCode).toBe(501);
+  });
+});
+
+describe("sharing the dev server (pnpm share)", () => {
+  it("keeps the name-only sign-in and bot shortcut on the host's own computer", async () => {
+    const payload = { displayName: "Impostor", birthDate: "1980-01-01" };
+    const viaTunnel = await app.inject({
+      method: "POST",
+      url: "/auth/dev-login",
+      payload,
+      headers: { host: "lucky-fox.trycloudflare.com", "cf-ray": "abc" },
+    });
+    expect(viaTunnel.statusCode).toBe(403);
+    expect(viaTunnel.json().error).toBe("dev_login_local_only");
+    const otherHost = await app.inject({
+      method: "POST",
+      url: "/auth/dev-login",
+      payload,
+      headers: { host: "example.com" },
+    });
+    expect(otherHost.statusCode).toBe(403);
+    for (const host of ["localhost:5173", "127.0.0.1:3001", "gran.localhost:5173"]) {
+      const local = await app.inject({
+        method: "POST",
+        url: "/auth/dev-login",
+        payload,
+        headers: { host },
+      });
+      expect(local.statusCode, host).toBe(200);
+    }
+    const bots = await app.inject({
+      method: "POST",
+      url: "/dev/latest-guest-link",
+      headers: { host: "lucky-fox.trycloudflare.com", "cf-ray": "abc" },
+    });
+    expect(bots.statusCode).toBe(403);
+  });
+
+  it("tells the web app the current share link", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vcr-share-"));
+    const file = join(dir, ".share-url");
+    const shareApp = await buildApp({
+      db: database.db,
+      dbKind: database.kind,
+      env: { ...env, SHARE_URL_FILE: file },
+    });
+    const read = async () => ShareInfo.parse((await shareApp.inject({ url: "/dev/share" })).json());
+    expect(await read()).toEqual({ url: null });
+    writeFileSync(file, "https://lucky-fox.trycloudflare.com\n");
+    expect(await read()).toEqual({ url: "https://lucky-fox.trycloudflare.com" });
+    await shareApp.close();
+  });
+
+  it("accepts Clerk sign-ins from the web origin, and share links only in development", () => {
+    const dev = { WEB_ORIGIN: "http://localhost:5173", NODE_ENV: "development" } as const;
+    const prod = { WEB_ORIGIN: "https://app.example", NODE_ENV: "production" } as const;
+    expect(isAllowedParty("http://localhost:5173", dev)).toBe(true);
+    expect(isAllowedParty("https://lucky-fox.trycloudflare.com", dev)).toBe(true);
+    expect(isAllowedParty("https://evil.example", dev)).toBe(false);
+    expect(isAllowedParty("https://lucky-fox.trycloudflare.com", prod)).toBe(false);
+    expect(isAllowedParty("https://app.example", prod)).toBe(true);
   });
 });

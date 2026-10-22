@@ -15,6 +15,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "smoke": "tsx scripts/smoke.ts",
+    "share": "node scripts/share.mjs",
     "db:generate": "pnpm --filter @vcr/api db:generate",
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",

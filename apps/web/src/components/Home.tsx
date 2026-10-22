@@ -12,6 +12,7 @@ import { useMyAvatar } from "../lib/avatar";
 import { useLive } from "../lib/live";
 import { enablePush, pushSupported } from "../lib/push";
 import { navigate } from "../lib/router";
+import { useShareUrl } from "../lib/share";
 
 const errorText = (err: unknown) =>
   err instanceof ApiRequestError ? err.message : "Something went wrong. Try again.";
@@ -26,6 +27,7 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const myAvatar = useMyAvatar();
+  const shareUrl = useShareUrl();
 
   useEffect(() => {
     void api.me().then(setMe);
@@ -56,6 +58,18 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
         </button>
       </header>
 
+      {shareUrl && shareUrl !== window.location.origin && (
+        <p className="share-banner">
+          🌍 Sharing live at <a href={shareUrl}>{shareUrl}</a>. Guest links you copy point there,
+          and visitors see your latest changes as you make them.
+          <button
+            className="link"
+            onClick={() => void navigator.clipboard?.writeText(shareUrl).catch(() => {})}
+          >
+            Copy
+          </button>
+        </p>
+      )}
       <main className="home-grid">
         <section className="panel">
           {myAvatar.status === "ready" && !myAvatar.recipe && (
