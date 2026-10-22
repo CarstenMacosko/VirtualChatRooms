@@ -721,3 +721,7 @@ label.check {
 .modal h2 {
   margin: 0;
 }
+
+.selectable {
+  user-select: all;
+}

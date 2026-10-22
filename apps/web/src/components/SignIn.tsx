@@ -30,6 +30,10 @@ export function SignIn() {
       <form className="card" onSubmit={onSubmit}>
         <h1>VirtualChatRooms</h1>
         <p className="muted">Hang out with friends and family as 3D avatars.</p>
+        <p>
+          <b>New here?</b> Enter your name and birthday to create your account. Use the same name
+          later to sign back in.
+        </p>
 
         <label>
           Your name
@@ -60,9 +64,12 @@ export function SignIn() {
           </p>
         )}
         <button type="submit" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"}
+          {busy ? "One moment…" : "Create account or sign in"}
         </button>
-        <p className="hint">Development sign-in. A managed auth provider replaces this later.</p>
+        <p className="hint">
+          Development sign-in: no password yet. Real accounts (email or Google sign-in) replace this
+          before launch.
+        </p>
       </form>
     </main>
   );

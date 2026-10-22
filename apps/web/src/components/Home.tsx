@@ -43,16 +43,8 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
       <header className="topbar">
         <strong>VirtualChatRooms</strong>
         <span className="spacer" />
-        {me && (
-          <button
-            className="pill code"
-            title="Share this so people can add you"
-            onClick={() => void navigator.clipboard?.writeText(me.friendCode)}
-          >
-            Friend code <b>{me.friendCode}</b> ⧉
-          </button>
-        )}
-        <span className="muted">{auth.user.displayName}</span>
+        {me && <FriendCode code={me.friendCode} />}
+        <span className="muted">Signed in as {auth.user.displayName}</span>
         <button className="link" onClick={signOut}>
           Sign out
         </button>
@@ -72,6 +64,40 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
         </section>
       </main>
     </div>
+  );
+}
+
+/** Your friend code; click to copy it (or select it, if the clipboard is blocked). */
+function FriendCode({ code }: { code: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "manual">("idle");
+  useEffect(() => {
+    if (state === "idle") return;
+    const timer = setTimeout(() => setState("idle"), 2500);
+    return () => clearTimeout(timer);
+  }, [state]);
+  return (
+    <button
+      className="pill code"
+      title="Share this so people can add you"
+      onClick={() => {
+        navigator.clipboard
+          .writeText(code)
+          .then(() => setState("copied"))
+          .catch(() => setState("manual"));
+      }}
+    >
+      {state === "copied" ? (
+        <>Copied {code} ✓</>
+      ) : state === "manual" ? (
+        <>
+          Your code: <b className="selectable">{code}</b>
+        </>
+      ) : (
+        <>
+          Friend code <b>{code}</b> · Copy
+        </>
+      )}
+    </button>
   );
 }
 
@@ -371,6 +397,12 @@ function Groups(props: { contacts: ContactsResponse | null; onChange(c: Contacts
       </ul>
       {creating ? (
         <form className="group-form" onSubmit={create}>
+          {people.length === 0 && (
+            <p className="hint">
+              Groups are made of your contacts. Add someone by friend code first, then pick them
+              here.
+            </p>
+          )}
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -406,7 +438,7 @@ function Groups(props: { contacts: ContactsResponse | null; onChange(c: Contacts
           </div>
         </form>
       ) : (
-        <button className="secondary" onClick={() => setCreating(true)} disabled={!people.length}>
+        <button className="secondary" onClick={() => setCreating(true)}>
           New group
         </button>
       )}

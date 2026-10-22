@@ -8,7 +8,10 @@ export const FriendCode = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(new RegExp(`^[${FRIEND_CODE_ALPHABET}]{8}$`), "Friend codes are 8 letters and numbers");
+  .regex(
+    new RegExp(`^[${FRIEND_CODE_ALPHABET}]{8}$`),
+    "That isn't a friend code. Codes are 8 characters and never use 0, 1, O, I or L.",
+  );
 
 export const Contact = z.object({
   userId: z.string(),

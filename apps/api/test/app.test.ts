@@ -169,7 +169,9 @@ describe("contacts", () => {
     const a = await person("Lonely");
     expect((await a.call("POST", "/contacts", { friendCode: "ZZZZZZZZ" })).statusCode).toBe(404);
     expect((await a.call("POST", "/contacts", { friendCode: a.friendCode })).statusCode).toBe(400);
-    expect((await a.call("POST", "/contacts", { friendCode: "short" })).statusCode).toBe(400);
+    const bad = await a.call("POST", "/contacts", { friendCode: "ABCDEFGO" });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().message).toMatch(/^That isn't a friend code/);
   });
 
   it("keeps only accepted contacts in groups", async () => {

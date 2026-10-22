@@ -13,6 +13,7 @@ import {
 import type { AppContext } from "../app";
 import { issueSessionToken, requireSession } from "../auth";
 import { users } from "../db/schema";
+import { readableIssues } from "../http";
 import { ensureFriendCode } from "../social";
 
 const toPublicUser = (row: typeof users.$inferSelect): PublicUser => ({
@@ -30,7 +31,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext) {
     app.post("/auth/dev-login", async (req, reply) => {
       const body = DevLoginRequest.safeParse(req.body);
       if (!body.success) {
-        const error: ApiError = { error: "invalid_request", message: body.error.message };
+        const error: ApiError = { error: "invalid_request", message: readableIssues(body.error) };
         return reply.code(400).send(error);
       }
       if (ageInYears(body.data.birthDate) < MIN_ACCOUNT_AGE) {
