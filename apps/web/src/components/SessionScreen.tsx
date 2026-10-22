@@ -9,7 +9,8 @@ import { EMOTE_GLYPHS } from "./emotes";
 import { InvitePanel } from "./InvitePanel";
 import { type JoinChoice, PreJoin } from "./PreJoin";
 import { colorFor } from "./emotes";
-import { VideoSidebar, VideoView } from "./VideoSidebar";
+import { useFaceTracking } from "../media/useFaceTracking";
+import { Headshot, VideoSidebar, VideoView } from "./VideoSidebar";
 import type { Autopilot } from "../world/World";
 
 // Three.js, Spark, Rapier and three-vrm are large; load them only when entering a room.
@@ -75,6 +76,11 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   const [pinned, setPinned] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const autopilotRef = useRef<Autopilot>({ targetId: null });
+  // Mirroring your face follows your camera until you choose otherwise with the button.
+  const [faceChoice, setFaceChoice] = useState<boolean | null>(null);
+  const faceOn = faceChoice ?? media.cameraOn;
+  const selfVideo = realm.selfId ? media.videos.get(realm.selfId) : undefined;
+  const face = useFaceTracking(faceOn, selfVideo?.mediaStreamTrack ?? null);
   const now = useNow(250);
 
   const me = realm.participants.find((p) => p.id === realm.selfId);
@@ -140,6 +146,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
               poseHub={realm.poseHub}
               audio={audio}
               autopilotRef={autopilotRef}
+              trackedFaceRef={face.faceRef}
               profile={profile}
               debug={debug}
             />
@@ -149,9 +156,11 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
               {pinnedVideo && (pinnedPerson.cameraOn || pinnedPerson.id === realm.selfId) ? (
                 <VideoView track={pinnedVideo} mirror={pinnedPerson.id === realm.selfId} />
               ) : (
-                <div className="tile-face" style={{ background: colorFor(pinnedPerson.userId) }}>
-                  {pinnedPerson.name.slice(0, 1).toUpperCase()}
-                </div>
+                <Headshot
+                  id={pinnedPerson.id}
+                  color={colorFor(pinnedPerson.userId)}
+                  name={pinnedPerson.name}
+                />
               )}
               <span className="pinned-name">{pinnedPerson.name}</span>
               <button className="tile-more" aria-label="Unpin" onClick={() => setPinned(null)}>
@@ -206,6 +215,17 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
           aria-pressed={media.cameraOn}
         >
           {media.cameraOn ? "📷 Stop video" : "🚫 Start video"}
+        </button>
+        <button
+          className={faceOn ? "toggle on" : "toggle"}
+          onClick={() => setFaceChoice(!faceOn)}
+          aria-pressed={faceOn}
+          title={
+            face.error ??
+            "Your avatar copies your expressions using your camera. Video stays on this device."
+          }
+        >
+          {face.status === "starting" ? "🙂 Starting…" : faceOn ? "😀 Face on" : "🙂 Face off"}
         </button>
         <div className="emotes" aria-label="Emotes">
           {EmoteId.options.map((id) => (

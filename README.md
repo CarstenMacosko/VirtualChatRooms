@@ -2,7 +2,16 @@
 
 > Working title. A metaverse built only for friends and family. You hang out and video-call as 3D avatars, inside real rooms you've scanned with your own phone, in the browser.
 
-**Status:** Phases 1 and 2 are working. You can walk around a Gaussian-splat living room as a VRM avatar with physics, cameras and touch controls. You can add family by friend code, start a gathering that rings them, and talk with spatial voice that comes from each person's avatar. A FaceTime-style video sidebar sits beside the room, and hosts can mute, turn off cameras, remove people, lock the room and promote co-hosts. Kids without accounts can join by guest link. The avatar creator (Phase 3) and room scanning (Phase 4) come next. The full technical design and build roadmap are in [PLAN.md](PLAN.md).
+**Status:** Phases 1–3 are working:
+
+- **The room:** walk around a Gaussian-splat living room with physics, cameras and touch controls.
+- **Your avatar:** a Bitmoji-style avatar you make yourself, starting from a selfie if you like. It copies your expressions from your webcam, or moves its mouth with your voice.
+- **Calling:** add family by friend code and start a gathering that rings them, even when their app is closed.
+- **Voice and video:** spatial voice comes from each person's avatar, with a FaceTime-style video sidebar beside the room.
+- **Host controls:** mute, camera off, remove, lock, co-hosts and hand-over.
+- **Guests:** kids without accounts join by guest link.
+
+Room scanning (Phase 4) comes next. The full technical design and build roadmap are in [PLAN.md](PLAN.md).
 
 ---
 
@@ -86,7 +95,8 @@ services/
   capture/          Python CPU worker: capture provider calls, post-processing, manifest
 packages/
   engine/           3D runtime: input intents, physics/locomotion, cameras, pose interpolation,
-                    procedural animation, sample room, device profile (framework-free, tested)
+                    procedural animation and emotes, face animation, sample room, device profile
+  avatar/           Avatar recipe → VRM 1.0 generator, palettes, selfie measurements
   protocol/         Shared message types and Zod schemas (client ⇄ servers)
   games-sdk/        Mini-game plugin interface (post-MVP, but defined early)
   ui/               Shared React UI components
@@ -97,7 +107,6 @@ infra/
 scripts/
   smoke.ts          End-to-end check against running servers
   bots.ts           Walking bots for multiplayer/load testing
-  generate-placeholder-avatar.ts   Writes the CC0 placeholder VRM in apps/web/public/avatars
 docs/
   adr/              Architecture decision records
 ```
@@ -130,7 +139,7 @@ Start the web client, API, realm server and LiveKit together. The first run crea
 pnpm dev
 ```
 
-Then open http://localhost:5173 and sign in with any name and an adult birth date. To try calling, sign in as a second person in a private window (or at http://gran.localhost:5173, which keeps a separate sign-in). Add each other by friend code (top right), then click **Start and ring**. The other window rings; answer it, check your mic and camera, and join. In the gathering, **Invite → Copy guest link** gives a link for someone without an account.
+Then open http://localhost:5173 and sign in with any name and an adult birth date. New accounts start in the avatar creator. To try calling, sign in as a second person in a private window (or at http://gran.localhost:5173, which keeps a separate sign-in). Add each other by friend code (top right), then click **Start and ring**. The other window rings; answer it, check your mic and camera, and join. In the gathering, **Invite → Copy guest link** gives a link for someone without an account.
 
 To fill your gathering with walking bots, start one in the app and run this. With no link, the bots join the most recently started live gathering:
 

@@ -1,6 +1,9 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import type { GuestLinkInfo, JoinSessionResponse } from "@vcr/protocol";
+import { recipeForSeed } from "@vcr/avatar";
+import type { AvatarRecipe, GuestLinkInfo, JoinSessionResponse } from "@vcr/protocol";
 import { api, ApiRequestError } from "../lib/api";
+import { loadGuestAvatar, saveGuestAvatar } from "../lib/avatar";
+import { AvatarCreator } from "./AvatarCreator";
 import { navigate } from "../lib/router";
 import { SessionScreen } from "./SessionScreen";
 
@@ -13,6 +16,8 @@ export function GuestJoin({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [first, setFirst] = useState<JoinSessionResponse | null>(null);
+  const [step, setStep] = useState<"name" | "avatar">("name");
+  const [avatar, setAvatar] = useState<AvatarRecipe | null>(loadGuestAvatar);
   const firstUsed = useRef(false);
 
   useEffect(() => {
@@ -24,11 +29,17 @@ export function GuestJoin({ token }: { token: string }) {
       );
   }, [token]);
 
-  async function submit(e: FormEvent) {
+  function submit(e: FormEvent) {
     e.preventDefault();
+    setStep("avatar");
+  }
+
+  async function join(chosen: AvatarRecipe | null) {
+    setAvatar(chosen);
     try {
-      setFirst(await api.guestJoin(token, name));
+      setFirst(await api.guestJoin(token, name, chosen));
     } catch (err) {
+      setStep("name");
       setError(err instanceof ApiRequestError ? err.message : "Couldn't join.");
     }
   }
@@ -43,7 +54,7 @@ export function GuestJoin({ token }: { token: string }) {
             firstUsed.current = true;
             return Promise.resolve(first);
           }
-          return api.guestJoin(token, name);
+          return api.guestJoin(token, name, avatar);
         }}
         title={info ? `${info.hostName}'s gathering` : "Gathering"}
         subtitle={info?.roomName}
@@ -53,6 +64,23 @@ export function GuestJoin({ token }: { token: string }) {
           setFirst(null);
           firstUsed.current = false;
           navigate("/", { replace: true });
+        }}
+      />
+    );
+  }
+
+  if (step === "avatar") {
+    return (
+      <AvatarCreator
+        initial={avatar ?? recipeForSeed(`${name}:${token}`)}
+        title={avatar ? "Your avatar" : "Make an avatar"}
+        intro="This is how everyone will see you. It's saved on this device only."
+        saveLabel="Continue"
+        secondaryLabel={avatar ? "Back" : "Skip"}
+        onSecondary={() => (avatar ? setStep("name") : void join(null))}
+        onSave={async (recipe) => {
+          saveGuestAvatar(recipe);
+          await join(recipe);
         }}
       />
     );

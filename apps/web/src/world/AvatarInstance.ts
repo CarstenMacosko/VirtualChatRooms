@@ -1,40 +1,45 @@
 import { type VRM, VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-import {
-  CanvasTexture,
-  Color,
-  Group,
-  type Material,
-  Mesh,
-  MeshBasicMaterial,
-  type MeshStandardMaterial,
-  type Object3D,
-  PlaneGeometry,
-} from "three";
+import { CanvasTexture, Group, Mesh, MeshBasicMaterial, PlaneGeometry, type Vector3 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { ANIMATED_BONES, ProceduralAnimator, type Vec3 } from "@vcr/engine";
-import type { LocoState } from "@vcr/protocol";
+import { buildAvatarVrm, GENERATOR_VERSION } from "@vcr/avatar";
+import {
+  ANIMATED_BONES,
+  type AnimatorInput,
+  type ExpressionWeights,
+  FaceAnimator,
+  type FaceInput,
+  ProceduralAnimator,
+  VRM_EXPRESSIONS,
+  type Vec3,
+} from "@vcr/engine";
+import type { AvatarRecipe, EmoteId } from "@vcr/protocol";
 
-export const PLACEHOLDER_AVATAR_URL = "/avatars/placeholder.vrm";
+/** Layer avatars render on as well as 0, so headshot cameras can draw just the avatars. */
+export const AVATAR_LAYER = 1;
 
-const fileCache = new Map<string, Promise<ArrayBuffer>>();
+const builtCache = new Map<string, Uint8Array>();
 
-/** Fetches each VRM file once; every avatar instance parses its own copy of the scene graph. */
-async function loadVrm(url: string): Promise<VRM> {
-  let file = fileCache.get(url);
-  if (!file) {
-    file = fetch(url).then((r) => {
-      if (!r.ok) throw new Error(`Avatar ${url} failed to load (${r.status})`);
-      return r.arrayBuffer();
-    });
-    fileCache.set(url, file);
+/** Builds each distinct recipe once; every instance parses its own copy of the scene graph. */
+function vrmBytes(recipe: AvatarRecipe): Uint8Array {
+  const key = `${GENERATOR_VERSION}:${JSON.stringify(recipe)}`;
+  let bytes = builtCache.get(key);
+  if (!bytes) {
+    bytes = buildAvatarVrm(recipe);
+    if (builtCache.size > 64) builtCache.delete(builtCache.keys().next().value!);
+    builtCache.set(key, bytes);
   }
+  return bytes;
+}
+
+export async function loadAvatarVrm(recipe: AvatarRecipe): Promise<VRM> {
   const loader = new GLTFLoader();
   loader.register((parser) => new VRMLoaderPlugin(parser));
-  const gltf = await loader.parseAsync(await file, "");
+  const gltf = await loader.parseAsync(vrmBytes(recipe).slice().buffer, "");
   const vrm = gltf.userData.vrm as VRM;
   VRMUtils.removeUnnecessaryVertices(gltf.scene);
   vrm.scene.traverse((o) => {
     o.frustumCulled = false; // skinned bounds don't follow animation
+    o.layers.enable(AVATAR_LAYER);
   });
   return vrm;
 }
@@ -62,41 +67,60 @@ function blobShadow(): Mesh {
   return mesh;
 }
 
-export interface AvatarFrame {
+export interface AvatarFrame extends AnimatorInput {
   position: Vec3;
   yaw: number;
-  loco: LocoState;
-  speed: number;
-  lookPitch?: number;
 }
 
 /**
- * One avatar in the scene: loads a VRM, tints its clothes, and poses it each frame from
- * locomotion state using the engine's ProceduralAnimator. Used for both local and remote people.
+ * One avatar in the scene, built from its recipe: posed each frame by the engine's
+ * ProceduralAnimator (locomotion + emotes), with a face driven by FaceAnimator (webcam tracking,
+ * voice, or procedural blinks). Used for local and remote people, and the creator preview.
  */
 export class AvatarInstance {
   readonly root = new Group();
   private vrm: VRM | null = null;
+  private recipeKey = "";
+  private loading = 0;
   private readonly animator = new ProceduralAnimator();
+  private readonly face = new FaceAnimator();
+  private faceInput: FaceInput = {};
+  private mood: Partial<ExpressionWeights> = {};
   private restHipsY = 0;
   private disposed = false;
   private headVisible = true;
 
-  constructor(url: string, color: string) {
-    this.root.add(blobShadow());
-    loadVrm(url)
+  constructor(recipe: AvatarRecipe, options: { shadow?: boolean } = {}) {
+    if (options.shadow !== false) this.root.add(blobShadow());
+    this.setRecipe(recipe);
+  }
+
+  /** Swaps in a different look (someone edited their avatar); keeps animation state. */
+  setRecipe(recipe: AvatarRecipe) {
+    const key = JSON.stringify(recipe);
+    if (key === this.recipeKey) return;
+    this.recipeKey = key;
+    const ticket = ++this.loading;
+    loadAvatarVrm(recipe)
       .then((vrm) => {
-        if (this.disposed) {
+        if (this.disposed || ticket !== this.loading) {
           VRMUtils.deepDispose(vrm.scene);
           return;
         }
+        if (this.vrm) {
+          this.vrm.scene.removeFromParent();
+          VRMUtils.deepDispose(this.vrm.scene);
+        }
         this.vrm = vrm;
         this.restHipsY = vrm.humanoid.getNormalizedBoneNode("hips")?.position.y ?? 0;
-        tintClothes(vrm.scene, color);
         this.setHeadVisible(this.headVisible);
         this.root.add(vrm.scene);
       })
       .catch((err: unknown) => console.error(err));
+  }
+
+  get loaded() {
+    return this.vrm !== null;
   }
 
   setVisible(visible: boolean) {
@@ -108,6 +132,37 @@ export class AvatarInstance {
     this.headVisible = visible;
     const head = this.vrm?.humanoid.getRawBoneNode("head");
     if (head) head.scale.setScalar(visible ? 1 : 0.0001);
+  }
+
+  /** Runs `fn` with the head shown, e.g. to render a headshot of your own first-person avatar. */
+  withHeadShown(fn: () => void) {
+    const hidden = !this.headVisible;
+    if (hidden) this.setHeadVisible(true);
+    fn();
+    if (hidden) this.setHeadVisible(false);
+  }
+
+  /** Face inputs for the coming frames: tracked blendshapes and/or voice loudness. */
+  setFace(input: Omit<FaceInput, "mood">) {
+    this.faceInput = input;
+  }
+
+  /** Holds expressions on the face (the creator's "try an expression" buttons). */
+  setMood(mood: Partial<ExpressionWeights>) {
+    this.mood = mood;
+  }
+
+  playEmote(id: EmoteId) {
+    this.animator.playEmote(id);
+  }
+
+  /** World position of the middle of the face, for headshots and look-at. */
+  faceWorldPosition(target: Vector3): boolean {
+    const head = this.vrm?.humanoid.getRawBoneNode("head");
+    if (!head) return false;
+    head.getWorldPosition(target);
+    target.y += 0.17 * this.root.scale.y;
+    return true;
   }
 
   update(dt: number, frame: AvatarFrame) {
@@ -122,6 +177,13 @@ export class AvatarInstance {
     }
     const hips = vrm.humanoid.getNormalizedBoneNode("hips");
     if (hips) hips.position.y = this.restHipsY + pose.hipsOffsetY;
+
+    const expressions = this.face.update(dt, {
+      ...this.faceInput,
+      mood: { ...this.mood, ...pose.mood },
+    });
+    const manager = vrm.expressionManager;
+    if (manager) for (const name of VRM_EXPRESSIONS) manager.setValue(name, expressions[name]);
     vrm.update(dt);
   }
 
@@ -130,14 +192,4 @@ export class AvatarInstance {
     this.root.removeFromParent();
     if (this.vrm) VRMUtils.deepDispose(this.vrm.scene);
   }
-}
-
-function tintClothes(scene: Object3D, color: string) {
-  const tint = new Color(color);
-  scene.traverse((o) => {
-    const material = (o as Mesh).material as Material | Material[] | undefined;
-    for (const m of Array.isArray(material) ? material : material ? [material] : []) {
-      if (m.name === "Clothes") (m as MeshStandardMaterial).color.copy(tint);
-    }
-  });
 }

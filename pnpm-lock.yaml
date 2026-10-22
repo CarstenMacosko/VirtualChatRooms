@@ -72,6 +72,9 @@ importers:
       '@types/web-push':
         specifier: 3.6.4
         version: 3.6.4
+      '@vcr/avatar':
+        specifier: workspace:^
+        version: link:../../packages/avatar
       drizzle-kit:
         specifier: 0.31.11
         version: 0.31.11
@@ -127,6 +130,9 @@ importers:
       '@colyseus/sdk':
         specifier: 0.18.5
         version: 0.18.5(@colyseus/core@0.18.21)(typescript@6.0.3)(zod@4.6.7)
+      '@mediapipe/tasks-vision':
+        specifier: 1.1.0
+        version: 1.1.0
       '@pixiv/three-vrm':
         specifier: 3.5.5
         version: 3.5.5(three@0.186.1)
@@ -139,6 +145,9 @@ importers:
       '@sparkjsdev/spark':
         specifier: 2.3.1
         version: 2.3.1(three@0.186.1)
+      '@vcr/avatar':
+        specifier: workspace:*
+        version: link:../../packages/avatar
       '@vcr/engine':
         specifier: workspace:*
         version: link:../../packages/engine
@@ -182,6 +191,28 @@ importers:
       vite:
         specifier: 8.3.5
         version: 8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)
+
+  packages/avatar:
+    dependencies:
+      '@vcr/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@pixiv/three-vrm':
+        specifier: 3.5.5
+        version: 3.5.5(three@0.186.1)
+      '@types/three':
+        specifier: 0.186.0
+        version: 0.186.0
+      three:
+        specifier: 0.186.1
+        version: 0.186.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.5
+        version: 5.0.5(@types/node@24.19.2)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
 
   packages/engine:
     dependencies:
@@ -820,6 +851,9 @@ packages:
 
   '@mediapipe/tasks-vision@0.10.17':
     resolution: {integrity: sha512-CZWV/q6TTe8ta61cZXjfnnHsfWIdFhms03M9T7Cnd5y2mdpylJM0rF1qRq+wsQVRMLz1OYPVEBU9ph2Bx8cxrg==}
+
+  '@mediapipe/tasks-vision@1.1.0':
+    resolution: {integrity: sha512-ZJqh0wMKOINorfSffvDAxzyO1//c+FiG3IkzOdNDnLqvBB3DbMfj0bB/tys2SNf9S914sgoIbIpF4HTOi336cg==}
 
   '@monogrid/gainmap-js@3.7.2':
     resolution: {integrity: sha512-nwbyP5gskF1clzuEynSG8uqmLhZYDkQa0zZYBQmh30OoVVqaDaZOUy93NIDjdTJB34go3mqVAQgxJKBlStOnig==}
@@ -2802,6 +2836,8 @@ snapshots:
       '@bufbuild/protobuf': 1.10.1
 
   '@mediapipe/tasks-vision@0.10.17': {}
+
+  '@mediapipe/tasks-vision@1.1.0': {}
 
   '@monogrid/gainmap-js@3.7.2(three@0.186.1)':
     dependencies:

@@ -487,16 +487,16 @@ export interface GameModule<S, M> {
 - **Guest links:** for people without accounts. Only a display name is asked for and nothing is stored.
 - **Realm:** tickets with roles, co-hosts, lock, remove (no rejoin), mute and camera-off (enforced through LiveKit's server API), end for everyone, and the host-left grace period (2 min, or 5 min for the owner's first arrival), which reports back to the API.
 - **Media:** LiveKit voice and video run through a spatial audio graph (HRTF panner per person following their avatar, per-person volume). Audio subscriptions go to the nearest 20 people within 20 m. Poses go over the LiveKit data channel, with the realm relay as fallback (ADR 0006 note). Speaking indicators work.
-- **Video sidebar:** you first, then pinned, then recent speakers, then nearest, with initials tiles for anyone whose camera is off.
-- **Verification:** `pnpm smoke` (23 checks) covers the whole flow. In the browser, host and invitee were checked with LiveKit connected and poses arriving only over LiveKit, plus a guest and 5 guest-link bots in one room.
+- **Video sidebar:** you first, then pinned, then recent speakers, then nearest. Camera-off people show a live headshot of their avatar (Phase 3). Pinning shows the person large over the room (720p capture for it). Double-clicking walks your avatar over to them. The sidebar collapses, and only the first 8 tiles carry video.
+- **Web Push:** people without the app open get calls as system notifications. These are withdrawn when the call is answered elsewhere, declined, missed, or the gathering ends. `pnpm dev` generates the VAPID keys into `.env`.
+- **Host controls:** besides the above, the owner can hand the host role to someone else.
+- **Verification:** `pnpm smoke` (24 checks) covers the whole flow. In the browser, host and invitee were checked with LiveKit connected and poses arriving only over LiveKit, plus a guest and 5 guest-link bots in one room.
 
 Not done yet, or not measured:
 
-- **Web Push** for when the app is closed. It needs VAPID keys and a service worker. In-app rings and background-tab notifications cover the open-app case.
-- **Avatar-headshot tiles:** waiting on Phase 3 avatars. **Transfer host**, **double-click a tile to walk over**, a **collapsible sidebar** and a **visible-tile cap** aren't built. Adaptive stream already pauses tiles that are off screen.
-- **The ambient bus** arrives with side conversations. Today every voice goes to the conversation bus.
-- **Simulcast layers** are 180p and 360p. 720p is left out until pinned tiles get bigger.
+- **The background bus is built but unused:** every voice still goes to the conversation bus until side conversations route people to it.
 - **Single API instance only:** live events and ring timers are in memory. Running several needs Redis pub/sub behind `LiveHub`.
+- **Real devices:** voice, video and push haven't been tested with real cameras and microphones (the test browser blocks them).
 - **Exit criteria not yet measured:** 25 cameras at ≤ 4 Mbps, ≥ 60 fps with 25 people, and invite-to-joined time with real devices.
 
 Planned scope:
@@ -511,6 +511,28 @@ Planned scope:
 - **Exit:** 25-person session (mix of humans and bots) with clear spatial voice and 25 cameras on at ≤ 4 Mbps down and ≥ 60 fps; invite-to-joined in ≤ 20 s.
 
 ### Phase 3: Avatar creator (weeks 9–15, overlaps Phase 2)
+
+**Status (2026-10-22):** built and verified in the browser, except live face tracking with a real webcam. What works:
+
+- **Avatars are recipes** ([ADR 0014](docs/adr/0014-avatars-are-recipes.md)). `packages/avatar` turns a recipe of about 400 bytes into a VRM 1.0 file with MToon toon shading. The look is Bitmoji-spirited: big head and eyes, mitten hands, ink outlines. It has 10 hair styles, facial hair, 4 tops, 3 bottoms, glasses, hats, and face and body sliders. Everything is original procedural geometry, so there are no third-party assets.
+- **Expressions:** blink (each eye), five visemes (aa, ih, ou, ee, oh), and happy, angry, sad, surprised and relaxed are face morph targets wired to VRM expression presets.
+- **Creator:** `/avatar` and the guest join flow have a live orbitable preview, buttons to try expressions and emotes, "Surprise me", and swatches and sliders. New accounts land in the creator once. The API stores the recipe; guests keep theirs on their device.
+- **Selfie assist:** on-device MediaPipe Face Landmarker. Face proportions, measured relative to face width, set the shape sliders. Sampled skin, hair and eye colors snap to the palettes. The photo is never uploaded or stored.
+- **In the room:**
+  - Recipes ride in realm tickets and room state, so everyone builds everyone's avatar locally. Live edits use `setAvatar`.
+  - With face tracking on (it follows your camera, or toggles on its own without publishing video), the 52 ARKit blendshapes and head rotation stream in the pose packet.
+  - Without tracking, mouths follow each person's voice level, and avatars blink on their own.
+  - Emotes are body animations with matching faces.
+  - Camera-off tiles show live headshots of the avatar.
+
+Not done yet:
+
+- **Look-at** (heads turning toward whoever is talking) and **avatar LOD**.
+- **Baked VRM upload:** waits for Phase 4's object storage. Every client builds from the recipe meanwhile, about 20 ms per avatar.
+- **Face tracking with a real webcam** is unverified: the model loads, but the test browser blocks cameras. Head rotation direction in particular needs a check.
+- **Exit criteria** need people: "recognizable in under 3 minutes" and "testers rate it fun / like Bitmoji".
+
+Planned scope:
 
 - Stylized base VRM (per art brief) with morph library; hair/outfit/accessory sets; MToon shading tuned for splat rooms
 - Selfie assist (on-device Face Landmarker → morphs + colors); editor UI; recipe save; VRM bake + upload

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SessionId } from "./api";
+import { AvatarRecipe } from "./avatar";
 
 /** Contracts between clients and the Colyseus realm server (PLAN.md § 3.4). */
 
@@ -27,6 +28,8 @@ export interface ParticipantView {
   cameraOn: boolean;
   /** Connected to LiveKit. Anyone who isn't still needs poses through the realm relay. */
   onMedia: boolean;
+  /** Their AvatarRecipe as JSON, or "" before they've made one (see `parseRecipe`). */
+  avatar: string;
 }
 
 export const EmoteId = z.enum(["wave", "laugh", "heart", "thumbsUp", "dance"]);
@@ -41,6 +44,8 @@ export const RealmMessage = {
   pose: "pose",
   /** Client → server: what the client is actually publishing. */
   mediaState: "mediaState",
+  /** Client → server: you changed your avatar mid-gathering. */
+  setAvatar: "setAvatar",
   /** Server → client, right after joining: where and how to connect to LiveKit. */
   media: "media",
   /** Server → client: something happened to you, e.g. a host muted you. */
@@ -67,6 +72,7 @@ export const ClientMessages = {
     cameraOn: z.boolean(),
     connected: z.boolean(),
   }),
+  [RealmMessage.setAvatar]: z.object({ recipe: AvatarRecipe }),
   [RealmMessage.hostMute]: Target,
   [RealmMessage.hostCameraOff]: Target,
   [RealmMessage.hostRemove]: Target,

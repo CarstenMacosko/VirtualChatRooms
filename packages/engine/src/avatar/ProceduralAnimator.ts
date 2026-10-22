@@ -1,5 +1,7 @@
-import { LocoState } from "@vcr/protocol";
+import { type EmoteId, LocoState } from "@vcr/protocol";
+import type { ExpressionWeights } from "../face/expressions";
 import { clamp, damp } from "../math";
+import { EMOTE_DURATION_S, emoteEnvelope, emoteFrame } from "./emotes";
 
 /** VRM 1.0 humanoid bones this animator drives. */
 export const ANIMATED_BONES = [
@@ -25,6 +27,17 @@ export type AnimatedBone = (typeof ANIMATED_BONES)[number];
 export interface RigPose {
   bones: Record<AnimatedBone, [number, number, number]>;
   hipsOffsetY: number;
+  /** Expressions the current emote wants on the face. */
+  mood?: Partial<ExpressionWeights>;
+}
+
+export interface AnimatorInput {
+  loco: LocoState;
+  speed: number;
+  /** First-person look pitch, radians. */
+  lookPitch?: number;
+  /** Extra head rotation (face tracking, or turning toward whoever's talking), radians. */
+  headLook?: { pitch: number; yaw: number; roll: number };
 }
 
 const ARM_DOWN = 1.25;
@@ -45,8 +58,52 @@ export class ProceduralAnimator {
   private moveWeight = 0;
   private runWeight = 0;
   private airWeight = 0;
+  private emote: { id: EmoteId; startedAt: number } | null = null;
 
-  update(dt: number, input: { loco: LocoState; speed: number; lookPitch?: number }): RigPose {
+  /** Plays an emote over whatever the avatar is doing; a new one replaces the last. */
+  playEmote(id: EmoteId) {
+    this.emote = { id, startedAt: this.time };
+  }
+
+  update(dt: number, input: AnimatorInput): RigPose {
+    const pose = this.locomotion(dt, input);
+    const look = input.headLook;
+    if (look) {
+      const h = pose.bones.head;
+      pose.bones.head = [h[0] + look.pitch, h[1] + look.yaw, h[2] + look.roll];
+    }
+    if (!this.emote) return pose;
+    const t = this.time - this.emote.startedAt;
+    if (t > EMOTE_DURATION_S) {
+      this.emote = null;
+      return pose;
+    }
+    const frame = emoteFrame(this.emote.id, t);
+    // Moving cancels the arm-heavy parts of an emote only halfway, so waving while walking works.
+    const weight = emoteEnvelope(t) * (1 - 0.5 * this.moveWeight);
+    const bones = { ...pose.bones };
+    for (const [name, rot] of Object.entries(frame.bones) as [
+      AnimatedBone,
+      [number, number, number],
+    ][]) {
+      const from = bones[name];
+      bones[name] = [
+        from[0] + (rot[0] - from[0]) * weight,
+        from[1] + (rot[1] - from[1]) * weight,
+        from[2] + (rot[2] - from[2]) * weight,
+      ];
+    }
+    const mood = Object.fromEntries(
+      Object.entries(frame.face).map(([k, v]) => [k, (v ?? 0) * emoteEnvelope(t)]),
+    ) as Partial<ExpressionWeights>;
+    return {
+      bones,
+      hipsOffsetY: pose.hipsOffsetY + (frame.hipsOffsetY ?? 0) * weight,
+      mood,
+    };
+  }
+
+  private locomotion(dt: number, input: AnimatorInput): RigPose {
     this.time += dt;
     const airborne = input.loco === LocoState.jump || input.loco === LocoState.fall;
     const speed = airborne ? 0 : input.speed;

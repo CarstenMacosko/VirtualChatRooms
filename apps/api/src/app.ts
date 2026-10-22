@@ -6,6 +6,7 @@ import { Gatherings } from "./gatherings";
 import { LiveHub } from "./live";
 import { PushNotifier, type PushSender } from "./push";
 import { authRoutes } from "./routes/auth";
+import { avatarRoutes } from "./routes/avatar";
 import { contactRoutes } from "./routes/contacts";
 import { eventRoutes } from "./routes/events";
 import { healthRoutes } from "./routes/health";
@@ -62,6 +63,7 @@ export async function buildApp(ctx: AppContext) {
 
   healthRoutes(app, services);
   authRoutes(app, services);
+  avatarRoutes(app, services);
   contactRoutes(app, services);
   sessionRoutes(app, services);
   eventRoutes(app, services);

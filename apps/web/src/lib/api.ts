@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
   ApiError,
+  type AvatarRecipe,
+  AvatarResponse,
   ContactsResponse,
   DevLoginResponse,
   GuestLinkInfo,
@@ -72,6 +74,9 @@ export const api = {
   health: () => request(HealthResponse, "/health"),
   devLogin: (body: DevLoginRequest) => request(DevLoginResponse, "/auth/dev-login", post(body)),
   me: () => request(MeResponse, "/me"),
+  myAvatar: () => request(AvatarResponse, "/me/avatar"),
+  saveAvatar: (recipe: AvatarRecipe) =>
+    request(AvatarResponse, "/me/avatar", json("PUT", { recipe })),
 
   contacts: () => request(ContactsResponse, "/contacts"),
   addContact: (friendCode: string) => request(ContactsResponse, "/contacts", post({ friendCode })),
@@ -104,6 +109,10 @@ export const api = {
     request(NoContent, "/push/subscriptions", post(body)),
 
   guestLink: (token: string) => request(GuestLinkInfo, `/guest/${token}`),
-  guestJoin: (token: string, displayName: string) =>
-    request(JoinSessionResponse, `/guest/${token}/join`, post({ displayName })),
+  guestJoin: (token: string, displayName: string, avatar?: AvatarRecipe | null) =>
+    request(
+      JoinSessionResponse,
+      `/guest/${token}/join`,
+      post({ displayName, ...(avatar && { avatar }) }),
+    ),
 };

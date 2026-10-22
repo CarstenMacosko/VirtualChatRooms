@@ -12,6 +12,8 @@ export const Participant = schema(
     cameraOn: t.boolean().default(false),
     /** Connected to LiveKit; see ParticipantView.onMedia. */
     onMedia: t.boolean().default(false),
+    /** AvatarRecipe JSON; "" until they make one. */
+    avatar: t.string().default(""),
     // Added in later phases: groupId (side conversations), seatId (sitting).
   },
   "Participant",

@@ -78,6 +78,11 @@ export class SessionRoom extends Room<{ state: SessionState }> {
       p.onMedia = message.connected;
     }),
 
+    [RealmMessage.setAvatar]: validate(ClientMessages.setAvatar, (client, { recipe }) => {
+      const p = this.state.participants.get(client.sessionId);
+      if (p) p.avatar = JSON.stringify(recipe);
+    }),
+
     [RealmMessage.hostMute]: validate(ClientMessages.hostMute, (client, { target }) => {
       const p = this.moderate(client, target);
       if (!p) return;
@@ -192,7 +197,12 @@ export class SessionRoom extends Room<{ state: SessionState }> {
     const role = this.roleFor(claims);
     this.state.participants.set(
       client.sessionId,
-      new Participant({ userId: claims.sub, name: claims.name, role }),
+      new Participant({
+        userId: claims.sub,
+        name: claims.name,
+        role,
+        avatar: claims.avatar ? JSON.stringify(claims.avatar) : "",
+      }),
     );
     if (isHost(role)) this.cancelHostAbsence();
 

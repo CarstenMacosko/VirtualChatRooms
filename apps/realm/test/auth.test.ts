@@ -23,7 +23,11 @@ const ticket = { sub: "usr_1", name: "Ada", kind: "user", sessionId: "ses_1", ro
 
 describe("verifyRealmTicket", () => {
   it("accepts a ticket issued by the API", async () => {
-    await expect(verifyRealmTicket(await sign(ticket), secret)).resolves.toEqual(ticket);
+    // Tickets from before avatars existed still parse; the avatar defaults to none.
+    await expect(verifyRealmTicket(await sign(ticket), secret)).resolves.toEqual({
+      ...ticket,
+      avatar: null,
+    });
   });
 
   it("rejects the wrong secret, issuer, expired tickets and malformed claims", async () => {

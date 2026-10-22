@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AvatarRecipe } from "./avatar";
 
 /** Rooms, live sessions ("gatherings"), invites and guest links (PLAN.md § 4.4). */
 
@@ -70,6 +71,8 @@ export type GuestLinkInfo = z.infer<typeof GuestLinkInfo>;
 
 export const GuestJoinRequest = z.object({
   displayName: z.string().trim().min(1).max(40),
+  /** Guests keep their avatar on their own device and bring it along; nothing is stored. */
+  avatar: AvatarRecipe.optional(),
 });
 export type GuestJoinRequest = z.infer<typeof GuestJoinRequest>;
 
@@ -80,8 +83,10 @@ export const RealmTicketClaims = z.object({
   kind: z.enum(["user", "guest"]),
   sessionId: z.string(),
   role: JoinRole,
+  /** Their avatar, so the realm can show it to everyone without asking the API. */
+  avatar: AvatarRecipe.nullable().default(null),
 });
-export type RealmTicketClaims = z.infer<typeof RealmTicketClaims>;
+export type RealmTicketClaims = z.input<typeof RealmTicketClaims>;
 
 /** How long an unanswered ring lasts before it counts as missed. */
 export const RING_TIMEOUT_MS = 45_000;

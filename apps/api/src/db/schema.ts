@@ -1,5 +1,6 @@
 import {
   index,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -157,4 +158,24 @@ export const pushSubscriptions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("push_subscriptions_user").on(t.userId)],
+);
+
+/**
+ * A person's avatar, stored as the creator's recipe (`AvatarRecipe` in @vcr/protocol). Clients
+ * build the VRM from it; a baked VRM in object storage (`vrmKey`) arrives with Phase 4 storage.
+ */
+export const avatars = pgTable(
+  "avatars",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    recipe: jsonb("recipe").notNull(),
+    vrmKey: text("vrm_key"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // One avatar per person for now; the id leaves room for an outfit wardrobe later.
+  (t) => [uniqueIndex("avatars_owner").on(t.ownerId)],
 );

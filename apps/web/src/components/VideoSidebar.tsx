@@ -6,6 +6,7 @@ import { useNow } from "../lib/hooks";
 import type { RealmSession } from "../lib/realm";
 import type { SpatialAudio } from "../media/SpatialAudio";
 import type { MediaState } from "../media/useMedia";
+import { registerHeadshot } from "../world/headshots";
 import { colorFor } from "./emotes";
 
 const ROLE_LABEL: Partial<Record<ParticipantRole, string>> = {
@@ -15,6 +16,18 @@ const ROLE_LABEL: Partial<Record<ParticipantRole, string>> = {
 };
 
 const perfNow = () => performance.now();
+
+/** A live render of someone's avatar face, for when their camera is off. */
+export function Headshot({ id, color, name }: { id: string; color: string; name: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => registerHeadshot(id, { canvas: ref.current!, color }), [id, color]);
+  return (
+    <div className="tile-face" style={{ background: color }} aria-hidden>
+      {name.slice(0, 1).toUpperCase()}
+      <canvas ref={ref} width={192} height={192} className="headshot" />
+    </div>
+  );
+}
 
 /**
  * At most this many tiles carry live video; the rest show as compact rows, which keeps download
@@ -149,10 +162,8 @@ function Tile(props: {
         {/* Others' camera state comes from the realm, so a muted track shows their initial. */}
         {showVideo ? (
           <VideoView track={props.video!} mirror={isSelf} />
-        ) : (
-          <div className="tile-face" style={{ background: colorFor(p.userId) }} aria-hidden>
-            {p.name.slice(0, 1).toUpperCase()}
-          </div>
+        ) : props.compact ? null : (
+          <Headshot id={p.id} color={colorFor(p.userId)} name={p.name} />
         )}
         {p.muted && (
           <span className="tile-muted" title="Muted">

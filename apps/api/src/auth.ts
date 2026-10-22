@@ -49,6 +49,7 @@ export function issueRealmTicket(claims: RealmTicketClaims, secret: string, ttl 
     kind: claims.kind,
     sessionId: claims.sessionId,
     role: claims.role,
+    avatar: claims.avatar ?? null,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(claims.sub)

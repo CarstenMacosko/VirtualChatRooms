@@ -1,10 +1,14 @@
 import { useSyncExternalStore } from "react";
 
-/** Three screens, so a tiny History API router instead of a dependency. */
+/** A handful of screens, so a tiny History API router instead of a dependency. */
 export type Route =
-  { name: "home" } | { name: "session"; id: string } | { name: "guest"; token: string };
+  | { name: "home" }
+  | { name: "avatar" }
+  | { name: "session"; id: string }
+  | { name: "guest"; token: string };
 
 export function parseRoute(pathname: string): Route {
+  if (/^\/avatar\/?$/.test(pathname)) return { name: "avatar" };
   const session = /^\/s\/([a-zA-Z0-9_-]{1,64})\/?$/.exec(pathname);
   if (session) return { name: "session", id: session[1]! };
   const guest = /^\/join\/([a-zA-Z0-9_-]{8,64})\/?$/.exec(pathname);

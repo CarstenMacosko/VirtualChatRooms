@@ -8,6 +8,7 @@ import type {
 } from "@vcr/protocol";
 import { api, ApiRequestError } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useMyAvatar } from "../lib/avatar";
 import { useLive } from "../lib/live";
 import { enablePush, pushSupported } from "../lib/push";
 import { navigate } from "../lib/router";
@@ -24,6 +25,7 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
   const [contacts, setContacts] = useState<ContactsResponse | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
+  const myAvatar = useMyAvatar();
 
   useEffect(() => {
     void api.me().then(setMe);
@@ -44,6 +46,9 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
       <header className="topbar">
         <strong>VirtualChatRooms</strong>
         <span className="spacer" />
+        <button className="pill code" onClick={() => navigate("/avatar")}>
+          {myAvatar.recipe ? "Edit avatar" : "Make your avatar"}
+        </button>
         {me && <FriendCode code={me.friendCode} />}
         <span className="muted">Signed in as {auth.user.displayName}</span>
         <button className="link" onClick={signOut}>
@@ -53,6 +58,15 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
 
       <main className="home-grid">
         <section className="panel">
+          {myAvatar.status === "ready" && !myAvatar.recipe && (
+            <div className="callout">
+              <p>
+                <b>Make your avatar.</b> Until you do, you'll show up as a randomly dressed
+                stand-in.
+              </p>
+              <button onClick={() => navigate("/avatar")}>Make my avatar</button>
+            </div>
+          )}
           <LiveNow sessions={sessions} myId={auth.user.id} />
           <StartGathering rooms={rooms} contacts={contacts} />
         </section>

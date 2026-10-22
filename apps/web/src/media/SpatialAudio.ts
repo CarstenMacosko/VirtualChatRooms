@@ -21,9 +21,14 @@ export type AudioBus = "conversation" | "background";
 /** Crossfade time when someone moves between buses. */
 const BUS_FADE_S = 0.3;
 
+/** Key `levelOf` uses for your own microphone. */
+export const LOCAL_VOICE = "__local";
+
 interface Source {
   element: HTMLAudioElement;
   node: MediaStreamAudioSourceNode;
+  /** Taps the voice before volume and distance, so mouths move however loud you hear them. */
+  meter: AnalyserNode;
   volume: GainNode;
   panner: PannerNode;
   /** One send per bus; routing crossfades between them. */
@@ -40,6 +45,12 @@ export class SpatialAudio {
   readonly positions = new Map<string, Vec3>();
   readonly listener: { position: Vec3 } = { position: [0, 0, 0] };
   private volumes = new Map<string, number>();
+  private localMic: {
+    node: MediaStreamAudioSourceNode;
+    meter: AnalyserNode;
+    track: MediaStreamTrack;
+  } | null = null;
+  private samples = new Float32Array(256);
 
   constructor() {
     this.context = new AudioContext({ latencyHint: "interactive" });
@@ -75,6 +86,8 @@ export class SpatialAudio {
     void element.play().catch(() => {});
 
     const node = this.context.createMediaStreamSource(stream);
+    const meter = new AnalyserNode(this.context, { fftSize: 256 });
+    node.connect(meter);
     const volume = this.context.createGain();
     volume.gain.value = this.volumes.get(id) ?? 1;
     const panner = new PannerNode(this.context, {
@@ -93,7 +106,7 @@ export class SpatialAudio {
     for (const name of ["conversation", "background"] as const) {
       panner.connect(sends[name]).connect(this.buses[name]);
     }
-    this.sources.set(id, { element, node, volume, panner, sends });
+    this.sources.set(id, { element, node, meter, volume, panner, sends });
     const at = this.positions.get(id);
     if (at) this.placeSource(this.sources.get(id)!, at);
   }
@@ -102,12 +115,35 @@ export class SpatialAudio {
     const source = this.sources.get(id);
     if (!source) return;
     source.node.disconnect();
+    source.meter.disconnect();
     source.volume.disconnect();
     source.panner.disconnect();
     source.sends.conversation.disconnect();
     source.sends.background.disconnect();
     source.element.srcObject = null;
     this.sources.delete(id);
+  }
+
+  /** Your own microphone, measured (never played back) so your avatar's mouth moves too. */
+  setLocalMic(track: MediaStreamTrack | null) {
+    if (this.localMic?.track === track) return;
+    this.localMic?.node.disconnect();
+    this.localMic = null;
+    if (!track) return;
+    const node = this.context.createMediaStreamSource(new MediaStream([track]));
+    const meter = new AnalyserNode(this.context, { fftSize: 256 });
+    node.connect(meter);
+    this.localMic = { node, meter, track };
+  }
+
+  /** How loud someone is right now (RMS, roughly 0–0.5 for speech); 0 if not heard. */
+  levelOf(id: string): number {
+    const meter = id === LOCAL_VOICE ? this.localMic?.meter : this.sources.get(id)?.meter;
+    if (!meter) return 0;
+    meter.getFloatTimeDomainData(this.samples);
+    let sum = 0;
+    for (const v of this.samples) sum += v * v;
+    return Math.sqrt(sum / this.samples.length);
   }
 
   /** Per-person volume, 0–2 (1 = normal). Survives them muting and unmuting. */
@@ -178,6 +214,7 @@ export class SpatialAudio {
 
   dispose() {
     for (const id of [...this.sources.keys()]) this.removeTrack(id);
+    this.setLocalMic(null);
     void this.context.close();
   }
 

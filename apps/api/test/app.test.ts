@@ -1,6 +1,8 @@
 import { jwtVerify, SignJWT } from "jose";
+import { recipeForSeed } from "@vcr/avatar";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  AvatarResponse,
   ContactsResponse,
   DevLoginResponse,
   GuestLinkInfo,
@@ -594,5 +596,49 @@ describe("web push", () => {
   it("reports push as off without VAPID keys", async () => {
     const key = VapidKeyResponse.parse((await app.inject({ url: "/push/vapid-key" })).json());
     expect(key.publicKey).toBeNull();
+  });
+});
+
+describe("avatars", () => {
+  it("saves a recipe, rejects junk, and puts it in realm tickets", async () => {
+    const owner = await person("Avatar Owner");
+    expect(AvatarResponse.parse((await owner.call("GET", "/me/avatar")).json()).recipe).toBeNull();
+
+    const recipe = recipeForSeed("avatar-test");
+    const saved = await owner.call("PUT", "/me/avatar", { recipe });
+    expect(AvatarResponse.parse(saved.json()).recipe).toEqual(recipe);
+    const changed = { ...recipe, glasses: "round" as const };
+    await owner.call("PUT", "/me/avatar", { recipe: changed });
+    expect(AvatarResponse.parse((await owner.call("GET", "/me/avatar")).json()).recipe).toEqual(
+      changed,
+    );
+
+    const bad = await owner.call("PUT", "/me/avatar", { recipe: { ...recipe, skin: "red" } });
+    expect(bad.statusCode).toBe(400);
+
+    const { rooms } = RoomsResponse.parse((await owner.call("GET", "/rooms")).json());
+    const { id } = SessionInfo.parse(
+      (await owner.call("POST", "/sessions", { roomId: rooms[0]!.id })).json(),
+    );
+    const joined = JoinSessionResponse.parse(
+      (await owner.call("POST", `/sessions/${id}/join`)).json(),
+    );
+    expect((await verifyTicket(joined.realmTicket)).avatar).toEqual(changed);
+
+    // Guests bring their own avatar; it goes into their ticket and nowhere else.
+    const link = GuestLinkResponse.parse(
+      (await owner.call("POST", `/sessions/${id}/guest-links`)).json(),
+    );
+    const guestAvatar = recipeForSeed("guest");
+    const guest = JoinSessionResponse.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/guest/${link.token}/join`,
+          payload: { displayName: "Kid", avatar: guestAvatar },
+        })
+      ).json(),
+    );
+    expect((await verifyTicket(guest.realmTicket)).avatar).toEqual(guestAvatar);
   });
 });

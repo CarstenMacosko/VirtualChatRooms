@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Group, Vector3 } from "three";
+import { Color, Euler, Group, PerspectiveCamera, Quaternion, Vector3 } from "three";
 import {
   autopilotStep,
   CameraRig,
@@ -18,11 +18,14 @@ import {
   sampleRoomColliders,
   type Vec3,
 } from "@vcr/engine";
-import type { ParticipantView, Quat } from "@vcr/protocol";
-import { colorFor, EMOTE_DURATION_MS, EMOTE_GLYPHS } from "../components/emotes";
+import type { AvatarRecipe, ParticipantView, Quat } from "@vcr/protocol";
+import { EMOTE_DURATION_MS, EMOTE_GLYPHS } from "../components/emotes";
+import { recipeOf } from "../lib/avatar";
 import type { ActiveEmote } from "../lib/realm";
-import type { SpatialAudio } from "../media/SpatialAudio";
-import { AvatarInstance, PLACEHOLDER_AVATAR_URL } from "./AvatarInstance";
+import type { TrackedFace } from "../media/FaceTracker";
+import { LOCAL_VOICE, type SpatialAudio } from "../media/SpatialAudio";
+import { AVATAR_LAYER, AvatarInstance } from "./AvatarInstance";
+import { headshotTargets } from "./headshots";
 import { RoomSplats } from "./RoomSplats";
 import { TouchControls } from "./TouchControls";
 
@@ -47,6 +50,8 @@ export interface WorldProps {
   audio: SpatialAudio | null;
   /** Set `targetId` to walk your avatar over to that person; moving yourself cancels it. */
   autopilotRef: RefObject<Autopilot>;
+  /** Your face from the webcam while face tracking is on; null otherwise. */
+  trackedFaceRef: RefObject<TrackedFace | null>;
   profile: DeviceProfile;
   debug: boolean;
 }
@@ -64,6 +69,11 @@ export default function World(props: WorldProps) {
   const self = props.participants.find((p) => p.id === props.selfId);
   const selfUserId = self?.userId;
   const { poseHub } = props;
+  // Read when the simulation is created; later changes go through setRecipe.
+  const selfRecipe = useRef<AvatarRecipe | null>(null);
+  useEffect(() => {
+    if (self) selfRecipe.current = recipeOf(self);
+  }, [self]);
 
   // Physics and your character are created once per signed-in user, so a realm reconnect keeps
   // your place in the room. Doing this in an async callback (not render) keeps StrictMode's double
@@ -75,7 +85,12 @@ export default function World(props: WorldProps) {
     PhysicsWorld.create()
       .then((physics) => {
         if (!alive) return physics.dispose();
-        created = createSim(physics, poseHub, selfUserId);
+        created = createSim(
+          physics,
+          poseHub,
+          selfUserId,
+          selfRecipe.current ?? recipeOf({ userId: selfUserId, avatar: "" }),
+        );
         setSim(created);
       })
       .catch((err: unknown) => alive && setLoadError(String(err)));
@@ -113,6 +128,8 @@ export default function World(props: WorldProps) {
             poseHub={poseHub}
             audio={props.audio}
             autopilotRef={props.autopilotRef}
+            trackedFaceRef={props.trackedFaceRef}
+            emotes={props.emotes}
             selfId={props.selfId}
             participants={props.participants}
             anchors={anchors}
@@ -177,7 +194,19 @@ function spawnFor(id: string) {
 }
 
 const pitchQuat = (pitch: number): Quat => [Math.sin(pitch / 2), 0, 0, Math.cos(pitch / 2)];
-const pitchFromQuat = (q: Quat) => 2 * Math.atan2(q[0], q[3]);
+
+const scratchQuat = new Quaternion();
+const scratchEuler = new Euler();
+const clampLook = (v: number) => Math.max(-0.7, Math.min(0.7, v));
+/** Head rotation from a pose's head quaternion, limited to what a neck can do. */
+function headLookFromQuat(q: Quat) {
+  scratchEuler.setFromQuaternion(scratchQuat.set(...q), "XYZ");
+  return {
+    pitch: clampLook(scratchEuler.x),
+    yaw: clampLook(scratchEuler.y),
+    roll: clampLook(scratchEuler.z),
+  };
+}
 
 interface Sim {
   physics: PhysicsWorld;
@@ -197,7 +226,12 @@ interface LoopState {
   statsAt: number;
 }
 
-function createSim(physics: PhysicsWorld, poseHub: PoseHub, userId: string): Sim {
+function createSim(
+  physics: PhysicsWorld,
+  poseHub: PoseHub,
+  userId: string,
+  recipe: AvatarRecipe,
+): Sim {
   for (const box of sampleRoomColliders()) physics.addBox(box);
   const spawn = spawnFor(userId);
   return {
@@ -206,7 +240,7 @@ function createSim(physics: PhysicsWorld, poseHub: PoseHub, userId: string): Sim
     character: new CharacterController(physics, spawn),
     rig: new CameraRig(spawn.yaw),
     sender: new PoseSender((bytes) => poseHub.send(bytes)),
-    local: new AvatarInstance(PLACEHOLDER_AVATAR_URL, colorFor(userId)),
+    local: new AvatarInstance(recipe),
   };
 }
 
@@ -222,6 +256,8 @@ function Simulation(props: {
   poseHub: PoseHub;
   audio: SpatialAudio | null;
   autopilotRef: RefObject<Autopilot>;
+  trackedFaceRef: RefObject<TrackedFace | null>;
+  emotes: Record<string, ActiveEmote>;
   /** Null while reconnecting to the realm; the room keeps running locally meanwhile. */
   selfId: string | null;
   participants: ParticipantView[];
@@ -230,7 +266,8 @@ function Simulation(props: {
   stats: RefObject<HTMLPreElement | null> | null;
   splatCount: number;
 }) {
-  const { sim, input, poseHub, audio, autopilotRef, selfId, anchors, labels } = props;
+  const { sim, input, poseHub, audio, autopilotRef, trackedFaceRef, selfId, anchors, labels } =
+    props;
   const { physics } = sim;
   const size = useThree((s) => s.size);
 
@@ -248,14 +285,33 @@ function Simulation(props: {
       }
     }
     for (const p of props.participants) {
-      if (p.id === selfId || remotes.current.has(p.id)) continue;
-      const avatar = new AvatarInstance(PLACEHOLDER_AVATAR_URL, colorFor(p.userId));
+      if (p.id === selfId) {
+        sim.local.setRecipe(recipeOf(p)); // no-op unless they changed their avatar
+        continue;
+      }
+      const existing = remotes.current.get(p.id);
+      if (existing) {
+        existing.setRecipe(recipeOf(p));
+        continue;
+      }
+      const avatar = new AvatarInstance(recipeOf(p));
       avatar.root.visible = false; // until their first pose arrives
       remoteGroup.add(avatar.root);
       remotes.current.set(p.id, avatar);
     }
     poseHub.retain(ids);
-  }, [props.participants, selfId, poseHub, audio, remoteGroup, anchors]);
+  }, [props.participants, selfId, poseHub, audio, remoteGroup, anchors, sim]);
+
+  // Emotes play on the avatars as well as showing a bubble.
+  const playedEmotes = useRef(new Map<string, number>());
+  useEffect(() => {
+    for (const [id, { emote, at }] of Object.entries(props.emotes)) {
+      if ((playedEmotes.current.get(id) ?? 0) >= at) continue;
+      playedEmotes.current.set(id, at);
+      const avatar = id === selfId ? sim.local : remotes.current.get(id);
+      avatar?.playEmote(emote);
+    }
+  }, [props.emotes, selfId, sim]);
   useEffect(() => {
     const map = remotes.current;
     return () => map.forEach((a) => a.dispose());
@@ -338,19 +394,28 @@ function Simulation(props: {
     ];
 
     // 3. Local avatar, outgoing pose, camera.
+    const tracked = trackedFaceRef.current;
     sim.local.setHeadVisible(!firstPerson);
+    sim.local.setFace({
+      tracked: tracked?.blendshapes ?? null,
+      voice: audio?.levelOf(LOCAL_VOICE) ?? 0,
+    });
     sim.local.update(dt, {
       position: feet,
       yaw: c.yaw,
       loco: c.loco,
       speed: c.speed,
       lookPitch: firstPerson ? rig.pitch : 0,
+      ...(tracked && { headLook: headLookFromQuat(tracked.head) }),
     });
+    // Others see your tracked head turn, or (in first person) where you're looking.
+    const head = tracked ? tracked.head : firstPerson ? pitchQuat(rig.pitch * 0.6) : undefined;
     sim.sender.update(now, {
       position: c.position,
       yaw: c.yaw,
       loco: c.loco,
-      ...(firstPerson && { head: pitchQuat(rig.pitch) }),
+      ...(head && { head }),
+      ...(tracked && { face: tracked.blendshapes }),
     });
     const cam = rig.compute(
       feet,
@@ -378,12 +443,13 @@ function Simulation(props: {
       }
       avatar.setVisible(true);
       audio?.setPosition(id, pose.position);
+      avatar.setFace({ tracked: pose.face ?? null, voice: audio?.levelOf(id) ?? 0 });
       avatar.update(dt, {
         position: pose.position,
         yaw: pose.yaw,
         loco: pose.loco,
         speed: pose.speed,
-        lookPitch: pose.head ? pitchFromQuat(pose.head) : 0,
+        ...(pose.head && { headLook: headLookFromQuat(pose.head) }),
       });
       anchors.current.set(id, [
         pose.position[0],
@@ -425,6 +491,71 @@ function Simulation(props: {
       l.statsAt = now;
     }
   });
+
+  // Headshots for camera-off tiles, then the main view. A frame callback with priority 1 makes R3F
+  // leave rendering to us, so the headshot draws happen in the same frame, before the main render.
+  const headshot = useMemo(() => {
+    const camera = new PerspectiveCamera(26, 1, 0.05, 10);
+    camera.layers.set(AVATAR_LAYER);
+    return { camera, at: new Vector3(), background: new Color() };
+  }, []);
+  const headshotTurnRef = useRef({ next: 0, cursor: 0 });
+  const lightsOnAvatarLayer = useRef(false);
+  useFrame((state) => {
+    const { gl, scene, camera } = state;
+    const now = performance.now();
+    const targets = [...headshotTargets.entries()];
+    const turn = headshotTurnRef.current;
+    if (targets.length > 0 && now >= turn.next) {
+      turn.next = now + 120;
+      if (!lightsOnAvatarLayer.current) {
+        scene.traverse((o) => {
+          if ((o as { isLight?: boolean }).isLight) o.layers.enable(AVATAR_LAYER);
+        });
+        lightsOnAvatarLayer.current = true;
+      }
+      const previousBackground = scene.background;
+      const pixelRatio = gl.getPixelRatio();
+      // A few per frame, round-robin, so 25 tiles cost about the same as 4.
+      for (let n = 0; n < Math.min(4, targets.length); n++) {
+        const [id, canvases] = targets[turn.cursor++ % targets.length]!;
+        const avatar = id === selfId ? sim.local : remotes.current.get(id);
+        if (!avatar?.loaded || !avatar.root.visible) continue;
+        const list = [...canvases];
+        const px = Math.max(...list.map((t) => t.canvas.width));
+        let drawn = false;
+        avatar.withHeadShown(() => {
+          avatar.root.updateMatrixWorld(true);
+          if (!avatar.faceWorldPosition(headshot.at)) return;
+          const yaw = avatar.root.rotation.y;
+          headshot.camera.position.set(
+            headshot.at.x + Math.sin(yaw) * 1.05,
+            headshot.at.y + 0.03,
+            headshot.at.z + Math.cos(yaw) * 1.05,
+          );
+          headshot.camera.lookAt(headshot.at);
+          headshot.camera.updateMatrixWorld();
+          scene.background = headshot.background.set(list[0]!.color);
+          gl.setScissorTest(true);
+          gl.setScissor(0, 0, px / pixelRatio, px / pixelRatio);
+          gl.setViewport(0, 0, px / pixelRatio, px / pixelRatio);
+          gl.render(scene, headshot.camera);
+          drawn = true;
+        });
+        if (!drawn) continue;
+        const source = gl.domElement;
+        for (const { canvas } of list) {
+          canvas
+            .getContext("2d")
+            ?.drawImage(source, 0, source.height - px, px, px, 0, 0, canvas.width, canvas.height);
+        }
+      }
+      scene.background = previousBackground;
+      gl.setScissorTest(false);
+      gl.setViewport(0, 0, state.size.width, state.size.height);
+    }
+    gl.render(scene, camera);
+  }, 1);
 
   return (
     <>

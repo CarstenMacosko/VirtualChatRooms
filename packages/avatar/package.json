@@ -1,0 +1,25 @@
+{
+  "name": "@vcr/avatar",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stylized avatars: recipe → VRM 1.0 generator, palettes, selfie measurements, expression mapping.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@vcr/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@pixiv/three-vrm": "3.5.5",
+    "@types/three": "0.186.0",
+    "three": "0.186.1",
+    "typescript": "6.0.3",
+    "vitest": "5.0.5"
+  }
+}

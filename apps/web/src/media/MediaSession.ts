@@ -260,6 +260,8 @@ export class MediaSession {
       cam && !cam.isMuted ? (cam.videoTrack as LocalVideoTrack | undefined) : undefined;
     if (camTrack) videos.set(lp.identity, camTrack);
     else videos.delete(lp.identity);
+    const mic = lp.getTrackPublication(Track.Source.Microphone);
+    this.audio.setLocalMic(mic && !mic.isMuted ? (mic.track?.mediaStreamTrack ?? null) : null);
     this.update({ micOn: lp.isMicrophoneEnabled, cameraOn: lp.isCameraEnabled, videos });
   }
 }

@@ -25,6 +25,7 @@ import {
 } from "../db/schema";
 import { type IdParams, parseBody, sendError } from "../http";
 import { acceptedContactIds } from "../social";
+import { avatarOf } from "./avatar";
 
 /** Guest links last the evening, and stop working as soon as the session ends. */
 const GUEST_LINK_TTL_MS = 12 * 60 * 60_000;
@@ -190,6 +191,7 @@ export function sessionRoutes(app: FastifyInstance, ctx: Services) {
         kind: "user",
         sessionId: info.id,
         role,
+        avatar: await avatarOf(db, me(req)),
       }),
     };
     return response;
@@ -320,6 +322,7 @@ export function sessionRoutes(app: FastifyInstance, ctx: Services) {
         kind: "guest",
         sessionId: row.session.id,
         role: "guest",
+        avatar: body.avatar ?? null,
       }),
     };
     return response;

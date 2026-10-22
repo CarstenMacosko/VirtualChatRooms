@@ -10,8 +10,8 @@ type OutgoingPose = Omit<AvatarPose, "seq" | "t">;
 const FRAME_SLACK_MS = 8;
 
 /**
- * Decides when to send the local avatar's pose: 15 Hz while moving, 2 Hz while idle (so late
- * joiners still see everyone), and immediately when the locomotion state changes.
+ * Decides when to send the local avatar's pose: 15 Hz while moving or face tracking, 2 Hz while
+ * idle (so late joiners still see everyone), and immediately when the locomotion state changes.
  */
 export class PoseSender {
   private seq = 0;
@@ -28,7 +28,8 @@ export class PoseSender {
 
   /** Returns true if a packet was sent. `now` is a monotonic clock in ms. */
   update(now: number, pose: OutgoingPose): boolean {
-    const moving = pose.loco !== LocoState.idle || this.changed(pose);
+    // A tracked face changes constantly, so it counts as moving (15 Hz) even when standing still.
+    const moving = pose.loco !== LocoState.idle || pose.face !== undefined || this.changed(pose);
     const interval = 1000 / (moving ? this.opts.movingHz : this.opts.idleHz);
     const locoChanged = this.last !== null && this.last.loco !== pose.loco;
     // Half a frame of slack so 60 fps updates hit 15 Hz instead of rounding down to 12.
