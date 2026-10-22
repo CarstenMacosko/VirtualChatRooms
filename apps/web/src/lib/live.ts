@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import { LiveEvent } from "@vcr/protocol";
 import { API_BASE } from "./api";
-import { useAuth } from "./auth";
+import { refreshSession, useAuth } from "./auth";
 
 type Ring = Extract<LiveEvent, { type: "ring" }>;
 type InviteResponse = Extract<LiveEvent, { type: "invite-response" }>;
@@ -97,7 +97,8 @@ export function useLiveEvents(token: string) {
           signal: controller.signal,
         });
         if (res.status === 401) {
-          useAuth.getState().signOut();
+          // A renewed session gets a new token, which restarts this effect.
+          if (!(await refreshSession())) useAuth.getState().signOut();
           return;
         }
         if (!res.ok || !res.body) throw new Error(`events: ${res.status}`);

@@ -12,6 +12,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@clerk/backend": "3.23.0",
     "@electric-sql/pglite": "0.5.11",
     "@fastify/cors": "11.3.1",
     "@vcr/protocol": "workspace:*",

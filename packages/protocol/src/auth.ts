@@ -48,3 +48,29 @@ export type SessionClaims = z.infer<typeof SessionClaims>;
 /** `GET /me`: the public profile plus the friend code others use to add you. */
 export const MeResponse = PublicUser.extend({ friendCode: z.string() });
 export type MeResponse = z.infer<typeof MeResponse>;
+
+/**
+ * `POST /auth/exchange`: trade a sign-in provider's session token (Clerk) for our session token.
+ * The first time someone signs in, the API also needs their display name and birth date (the
+ * provider doesn't collect birthdays); until it has them it answers "needs-profile".
+ */
+export const ExchangeRequest = z.object({
+  providerToken: z.string().min(1),
+  profile: z
+    .object({
+      displayName: z.string().trim().min(1).max(40),
+      birthDate: z.iso.date(),
+    })
+    .optional(),
+});
+export type ExchangeRequest = z.infer<typeof ExchangeRequest>;
+
+export const ExchangeResponse = z.discriminatedUnion("status", [
+  DevLoginResponse.extend({ status: z.literal("signed-in") }),
+  z.object({
+    status: z.literal("needs-profile"),
+    /** A display name to pre-fill, from the provider account. */
+    suggestedName: z.string(),
+  }),
+]);
+export type ExchangeResponse = z.infer<typeof ExchangeResponse>;

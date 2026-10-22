@@ -5,6 +5,7 @@ import {
   AvatarResponse,
   ContactsResponse,
   DevLoginResponse,
+  ExchangeResponse,
   GuestLinkInfo,
   GuestLinkResponse,
   HealthResponse,
@@ -640,5 +641,97 @@ describe("avatars", () => {
       ).json(),
     );
     expect((await verifyTicket(guest.realmTicket)).avatar).toEqual(guestAvatar);
+  });
+});
+
+describe("real accounts (provider exchange)", () => {
+  /** A stand-in for Clerk: tokens look like "valid:<provider user id>". */
+  function fakeIdentity() {
+    const deleted: string[] = [];
+    return {
+      deleted,
+      provider: {
+        name: "clerk",
+        verify: async (token: string) => {
+          if (!token.startsWith("valid:")) throw new Error("bad token");
+          return { id: token.slice(6) };
+        },
+        profile: async () => ({ displayName: "Ada Lovelace" }),
+        deleteAccount: async (id: string) => {
+          deleted.push(id);
+        },
+      },
+    };
+  }
+
+  async function withIdentity() {
+    const fake = fakeIdentity();
+    const authApp = await buildApp({
+      db: database.db,
+      dbKind: database.kind,
+      env,
+      identity: fake.provider,
+    });
+    const exchange = (payload: object) =>
+      authApp.inject({ method: "POST", url: "/auth/exchange", payload });
+    return { fake, authApp, exchange };
+  }
+
+  it("asks new people for a name and birthday, then signs them in", async () => {
+    const { authApp, exchange } = await withIdentity();
+    const first = ExchangeResponse.parse(
+      (await exchange({ providerToken: "valid:clerk_1" })).json(),
+    );
+    expect(first).toEqual({ status: "needs-profile", suggestedName: "Ada Lovelace" });
+
+    const done = ExchangeResponse.parse(
+      (
+        await exchange({
+          providerToken: "valid:clerk_1",
+          profile: { displayName: "Ada", birthDate: "1990-12-10" },
+        })
+      ).json(),
+    );
+    expect(done.status).toBe("signed-in");
+    if (done.status !== "signed-in") return;
+    const me = await authApp.inject({
+      url: "/me",
+      headers: { authorization: `Bearer ${done.token}` },
+    });
+    expect(MeResponse.parse(me.json()).displayName).toBe("Ada");
+
+    // Next time, straight in, as the same user.
+    const again = ExchangeResponse.parse(
+      (await exchange({ providerToken: "valid:clerk_1" })).json(),
+    );
+    expect(again.status === "signed-in" && again.user.id).toBe(done.user.id);
+    await authApp.close();
+  });
+
+  it("refuses under-13 sign-ups and deletes their provider account", async () => {
+    const { fake, authApp, exchange } = await withIdentity();
+    const twelve = `${new Date().getUTCFullYear() - 12}-01-01`;
+    const res = await exchange({
+      providerToken: "valid:clerk_kid",
+      profile: { displayName: "Kid", birthDate: twelve },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe("age_requirement");
+    expect(fake.deleted).toEqual(["clerk_kid"]);
+    const rows = await database.db.query.users.findMany();
+    expect(rows.some((u) => u.authProviderId === "clerk_kid")).toBe(false);
+    await authApp.close();
+  });
+
+  it("rejects bad provider tokens, and says when accounts aren't configured", async () => {
+    const { authApp, exchange } = await withIdentity();
+    expect((await exchange({ providerToken: "forged" })).statusCode).toBe(401);
+    await authApp.close();
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/exchange",
+      payload: { providerToken: "valid:x" },
+    });
+    expect(res.statusCode).toBe(501);
   });
 });

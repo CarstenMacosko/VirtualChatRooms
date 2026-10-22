@@ -3,6 +3,7 @@ import Fastify from "fastify";
 import type { Database, DatabaseHandle } from "./db/client";
 import type { Env } from "./env";
 import { Gatherings } from "./gatherings";
+import { identityFromEnv, type IdentityProvider } from "./identity";
 import { LiveHub } from "./live";
 import { PushNotifier, type PushSender } from "./push";
 import { authRoutes } from "./routes/auth";
@@ -22,6 +23,8 @@ export interface AppContext {
   ringTimeoutMs?: number;
   /** Replaces the real Web Push sender, for tests. */
   pushSender?: PushSender;
+  /** Replaces the sign-in provider (Clerk, from env), for tests. */
+  identity?: IdentityProvider | null;
 }
 
 /** What route modules get: the app context plus the in-process services built on it. */
@@ -29,6 +32,7 @@ export interface Services extends AppContext {
   live: LiveHub;
   gatherings: Gatherings;
   push: PushNotifier;
+  identity: IdentityProvider | null;
 }
 
 export async function buildApp(ctx: AppContext) {
@@ -45,7 +49,8 @@ export async function buildApp(ctx: AppContext) {
   const push = new PushNotifier(ctx.db, ctx.env, ctx.pushSender);
   const gatherings = new Gatherings(ctx.db, live, push, ctx.ringTimeoutMs);
   await gatherings.expireStaleRings();
-  const services: Services = { ...ctx, live, gatherings, push };
+  const identity = ctx.identity === undefined ? identityFromEnv(ctx.env) : ctx.identity;
+  const services: Services = { ...ctx, live, gatherings, push, identity };
 
   // Contacts see each other come online and go offline.
   live.onPresenceChange((userId) => {

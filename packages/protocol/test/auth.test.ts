@@ -33,3 +33,22 @@ describe("DevLoginRequest", () => {
     );
   });
 });
+
+describe("ExchangeRequest", () => {
+  it("takes a provider token, with an optional first-time profile", async () => {
+    const { ExchangeRequest } = await import("../src/auth");
+    expect(ExchangeRequest.safeParse({ providerToken: "t" }).success).toBe(true);
+    expect(
+      ExchangeRequest.safeParse({
+        providerToken: "t",
+        profile: { displayName: "Ada", birthDate: "1990-01-01" },
+      }).success,
+    ).toBe(true);
+    expect(
+      ExchangeRequest.safeParse({
+        providerToken: "t",
+        profile: { displayName: "", birthDate: "x" },
+      }).success,
+    ).toBe(false);
+  });
+});

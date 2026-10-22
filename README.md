@@ -76,7 +76,7 @@ flowchart LR
 | Media               | LiveKit (Cloud to start, self-hostable later)                                                                                        |
 | Realtime state      | Colyseus                                                                                                                             |
 | API                 | Fastify, Drizzle ORM, PostgreSQL, Redis, Zod-validated contracts                                                                     |
-| Auth                | Managed provider (Clerk or Supabase Auth); guest links for invitees                                                                  |
+| Auth                | Clerk (email and Google sign-in), exchanged for our own session token; guest links for invitees                                      |
 | Room reconstruction | KIRI Engine 3DGS API (video → splat + mesh), plus import of Scaniverse / Polycam / KIRI app exports. Self-hosted `gsplat` is Plan B. |
 | Capture worker      | Python, FFmpeg, Open3D (collision mesh, floor/scale), spz tools. CPU only.                                                           |
 | Storage / CDN       | S3-compatible (Cloudflare R2, chosen for low egress cost on large room files)                                                        |
@@ -139,7 +139,7 @@ Start the web client, API, realm server and LiveKit together. The first run crea
 pnpm dev
 ```
 
-Then open http://localhost:5173 and sign in with any name and an adult birth date. New accounts start in the avatar creator. To try calling, sign in as a second person in a private window (or at http://gran.localhost:5173, which keeps a separate sign-in). Add each other by friend code (top right), then click **Start and ring**. The other window rings; answer it, check your mic and camera, and join. In the gathering, **Invite → Copy guest link** gives a link for someone without an account.
+Then open http://localhost:5173 and sign in. Without Clerk keys (the default), the development sign-in asks for any name and an adult birth date. New accounts start in the avatar creator. To try calling, sign in as a second person in a private window (or at http://gran.localhost:5173, which keeps a separate sign-in). Add each other by friend code (top right), then click **Start and ring**. The other window rings; answer it, check your mic and camera, and join. In the gathering, **Invite → Copy guest link** gives a link for someone without an account.
 
 To fill your gathering with walking bots, start one in the app and run this. With no link, the bots join the most recently started live gathering:
 
@@ -148,6 +148,14 @@ pnpm bots 10
 ```
 
 Add a number of seconds to keep them longer (`pnpm bots 24 300`), or a copied guest link to pick a specific gathering.
+
+**Real accounts (Clerk).** To sign in with email or Google instead of the development sign-in:
+
+1. Create an application at [dashboard.clerk.com](https://dashboard.clerk.com) with **Email** and **Google** turned on.
+2. Copy its keys into `.env`: the publishable key into `VITE_CLERK_PUBLISHABLE_KEY` and the secret key into `CLERK_SECRET_KEY`.
+3. Restart `pnpm dev`.
+
+The first time someone signs in, the app asks for their name and date of birth. Under-13 sign-ups are refused, and their Clerk account is deleted. Clerk only accepts sign-ins from `WEB_ORIGIN` (http://localhost:5173 by default), so use that address, not `127.0.0.1` or a `*.localhost` name. The development sign-in keeps working for `pnpm smoke` and `pnpm bots` as long as `NODE_ENV` isn't `production`.
 
 | Control              | Desktop                                             | Phone / tablet                |
 | -------------------- | --------------------------------------------------- | ----------------------------- |

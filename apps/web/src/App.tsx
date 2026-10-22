@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { DevLoginResponse, SessionInfo } from "@vcr/protocol";
 import { recipeForSeed } from "@vcr/avatar";
+import { AccountSignIn, CLERK_PUBLISHABLE_KEY } from "./components/AccountSignIn";
 import { AvatarCreator } from "./components/AvatarCreator";
 import { GuestJoin } from "./components/GuestJoin";
 import { Home } from "./components/Home";
@@ -19,8 +20,9 @@ export function App() {
   const auth = useAuth((s) => s.auth);
   // Guest links work without an account.
   if (route.name === "guest") return <GuestJoin token={route.token} />;
-  if (!auth) return <SignIn />;
-  return <SignedIn key={auth.token} auth={auth} route={route} />;
+  if (!auth) return CLERK_PUBLISHABLE_KEY ? <AccountSignIn /> : <SignIn />;
+  // Keyed by person, not token: a renewed session mustn't restart an ongoing gathering.
+  return <SignedIn key={auth.user.id} auth={auth} route={route} />;
 }
 
 function SignedIn({ auth, route }: { auth: DevLoginResponse; route: Route }) {

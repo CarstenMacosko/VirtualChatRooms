@@ -5,6 +5,7 @@ import {
   AvatarResponse,
   ContactsResponse,
   DevLoginResponse,
+  ExchangeResponse,
   GuestLinkInfo,
   GuestLinkResponse,
   HealthResponse,
@@ -15,11 +16,12 @@ import {
   SessionsResponse,
   VapidKeyResponse,
   type DevLoginRequest,
+  type ExchangeRequest,
   type PushSubscriptionRequest,
   type SaveGroupRequest,
   type StartSessionRequest,
 } from "@vcr/protocol";
-import { useAuth } from "./auth";
+import { refreshSession, useAuth } from "./auth";
 
 /** Thin fetch wrapper for apps/api. Vite proxies /api to the API in development. */
 
@@ -37,7 +39,12 @@ export class ApiRequestError extends Error {
 
 const NoContent = z.unknown();
 
-async function request<T>(schema: z.ZodType<T>, path: string, init?: RequestInit): Promise<T> {
+async function request<T>(
+  schema: z.ZodType<T>,
+  path: string,
+  init?: RequestInit,
+  retried = false,
+): Promise<T> {
   const token = useAuth.getState().auth?.token;
   const res = await fetch(API_BASE + path, {
     ...init,
@@ -49,8 +56,12 @@ async function request<T>(schema: z.ZodType<T>, path: string, init?: RequestInit
   });
   const body: unknown = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
-    // An expired or revoked session: sign out so the user can sign in again.
-    if (res.status === 401 && token) useAuth.getState().signOut();
+    // An expired session: renew it quietly if the sign-in provider still knows them; otherwise
+    // sign out so they can sign in again.
+    if (res.status === 401 && token) {
+      if (!retried && (await refreshSession())) return request(schema, path, init, true);
+      useAuth.getState().signOut();
+    }
     const error = ApiError.safeParse(body);
     throw new ApiRequestError(
       res.status,
@@ -73,6 +84,7 @@ const json = (method: string, body: unknown): RequestInit => ({
 export const api = {
   health: () => request(HealthResponse, "/health"),
   devLogin: (body: DevLoginRequest) => request(DevLoginResponse, "/auth/dev-login", post(body)),
+  exchange: (body: ExchangeRequest) => request(ExchangeResponse, "/auth/exchange", post(body)),
   me: () => request(MeResponse, "/me"),
   myAvatar: () => request(AvatarResponse, "/me/avatar"),
   saveAvatar: (recipe: AvatarRecipe) =>

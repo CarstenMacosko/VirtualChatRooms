@@ -980,3 +980,22 @@ label.check {
     max-height: none;
   }
 }
+
+/* Clerk sign-in */
+.signin-stack {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+  max-width: 420px;
+}
+.signin-stack .brand {
+  text-align: center;
+}
+.signin-stack .brand h1 {
+  margin: 0;
+}
+.signin-stack .brand p,
+.signin-stack .hint {
+  margin: 4px 0 0;
+  text-align: center;
+}

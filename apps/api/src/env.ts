@@ -12,6 +12,10 @@ const Env = z.object({
     .transform((v) => v || undefined),
   PGLITE_DIR: z.string().default(fileURLToPath(new URL("../.data/pglite", import.meta.url))),
   SESSION_TOKEN_SECRET: z.string().min(32),
+  /** Clerk (real accounts). Empty: only the development sign-in is available. */
+  CLERK_SECRET_KEY: z.string().default(""),
+  /** Optional: Clerk's JWT public key (PEM), to verify sessions without fetching keys. */
+  CLERK_JWT_KEY: z.string().default(""),
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
   /** Web Push (calls while the app is closed). Empty disables push; `pnpm dev` generates a pair. */
   VAPID_PUBLIC_KEY: z.string().default(""),

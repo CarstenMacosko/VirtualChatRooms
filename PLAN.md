@@ -453,7 +453,9 @@ export interface GameModule<S, M> {
 
 ### Phase 0: Foundations (weeks 1–2)
 
-**Status (2026-10-21):** scaffolded and passing CI checks locally. Still open: choosing and wiring the managed auth provider (a dev sign-in with the same 13+ gate stands in for it, and issues the same session token the provider exchange will), and the avatar art brief.
+**Status (2026-10-21):** scaffolded and passing CI checks locally.
+
+**Update (2026-10-22):** real accounts use Clerk with email and Google sign-in ([ADR 0015](docs/adr/0015-clerk-accounts-exchanged-for-our-session.md)). The development sign-in remains when no Clerk keys are set, and is always off in production. The avatar art brief became the procedural style in Phase 3.
 
 - Monorepo (pnpm, Turborepo), TypeScript configs, lint/format, CI (typecheck, test, build)
 - `infra/docker-compose.yml`: Postgres, Redis, LiveKit (dev mode), SeaweedFS (S3; MinIO no longer ships images)
