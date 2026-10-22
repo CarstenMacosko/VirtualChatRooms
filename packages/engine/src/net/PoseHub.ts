@@ -3,13 +3,16 @@ import { type InterpolatedPose, RemotePoseBuffer } from "./PoseBuffer";
 
 /**
  * Routes relayed pose packets to one interpolation buffer per remote participant, and sends the
- * local pose through whatever transport is currently connected (realm relay now, LiveKit later).
+ * local pose through whatever transport is currently connected (LiveKit's data channel, or the
+ * realm relay as a fallback).
  */
 export class PoseHub {
   private buffers = new Map<string, RemotePoseBuffer>();
   private sender: ((bytes: Uint8Array) => void) | null = null;
   /** Packets that failed to decode, e.g. from a client on a newer wire version. */
   dropped = 0;
+  /** Packets received per transport, for the debug overlay. */
+  readonly received = { relayed: 0, direct: 0 };
 
   setSender(sender: ((bytes: Uint8Array) => void) | null) {
     this.sender = sender;
@@ -19,9 +22,28 @@ export class PoseHub {
     this.sender?.(bytes);
   }
 
+  /** A packet the realm relayed (sender id + pose). */
   ingest(relayed: Uint8Array, now: number) {
     try {
       const { from, pose } = decodeRelayedPose(relayed);
+      this.received.relayed++;
+      this.push(from, pose, now);
+    } catch {
+      this.dropped++;
+    }
+  }
+
+  /**
+   * A raw pose whose sender the transport already knows (LiveKit data packets). The same pose may
+   * also arrive through the realm relay; sequence numbers drop the duplicate.
+   */
+  ingestPose(from: string, pose: Uint8Array, now: number) {
+    this.received.direct++;
+    this.push(from, pose, now);
+  }
+
+  private push(from: string, pose: Uint8Array, now: number) {
+    try {
       let buffer = this.buffers.get(from);
       if (!buffer) {
         buffer = new RemotePoseBuffer();

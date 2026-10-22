@@ -6,12 +6,14 @@ import {
   type ApiError,
   DevLoginRequest,
   type DevLoginResponse,
+  type MeResponse,
   MIN_ACCOUNT_AGE,
   type PublicUser,
 } from "@vcr/protocol";
 import type { AppContext } from "../app";
 import { issueSessionToken, requireSession } from "../auth";
 import { users } from "../db/schema";
+import { ensureFriendCode } from "../social";
 
 const toPublicUser = (row: typeof users.$inferSelect): PublicUser => ({
   id: row.id,
@@ -54,6 +56,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext) {
         })
         .returning();
 
+      await ensureFriendCode(db, row!.id);
       const user = toPublicUser(row!);
       const token = await issueSessionToken(
         { sub: user.id, name: user.displayName, kind: "user" },
@@ -70,6 +73,10 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext) {
       const error: ApiError = { error: "not_found", message: "User no longer exists." };
       return reply.code(404).send(error);
     }
-    return toPublicUser(row);
+    const response: MeResponse = {
+      ...toPublicUser(row),
+      friendCode: row.friendCode ?? (await ensureFriendCode(db, row.id)),
+    };
+    return response;
   });
 }

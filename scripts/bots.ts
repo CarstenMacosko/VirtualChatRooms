@@ -1,17 +1,23 @@
 /**
- * Load/feel test for Phase 1: N bots join a session and wander the sample room, sending poses at
- * the same rates a real client does. Run alongside `pnpm dev`, then open the web app:
+ * Load/feel test: N bots join a live gathering as guests and wander the sample room, sending poses
+ * at the same rates a real client does (through the realm relay, since bots don't use LiveKit).
+ * Start a gathering in the web app, click Invite → Copy guest link, then:
  *
- *   pnpm bots 10            # 10 bots in the "lobby" session for 2 minutes
- *   pnpm bots 25 family 300 # 25 bots in ?session=family for 5 minutes
+ *   pnpm bots 10 <guest link>       # 10 bots for 2 minutes
+ *   pnpm bots 24 <guest link> 300   # 24 bots for 5 minutes (25 people with you)
  */
 import { Client, type Room } from "@colyseus/sdk";
 import { PoseSender, SAMPLE_ROOM } from "@vcr/engine";
-import { DevLoginResponse, LocoState, REALM_ROOM_NAME, RealmMessage } from "@vcr/protocol";
+import { JoinSessionResponse, LocoState, REALM_ROOM_NAME, RealmMessage } from "@vcr/protocol";
 
 const count = Number(process.argv[2] ?? 10);
-const sessionId = process.argv[3] ?? "lobby";
+// Accepts the whole link (http://localhost:5173/join/<token>) or just the token.
+const guestToken = process.argv[3]?.split("/").filter(Boolean).at(-1);
 const seconds = Number(process.argv[4] ?? 120);
+if (!guestToken) {
+  console.error("Usage: pnpm bots <count> <guest link> [seconds]");
+  process.exit(1);
+}
 const API = process.env.BOTS_API_URL ?? "http://127.0.0.1:3001";
 const REALM = process.env.BOTS_REALM_URL ?? "ws://127.0.0.1:2567";
 
@@ -38,15 +44,28 @@ interface Bot {
 }
 
 async function startBot(i: number): Promise<Bot> {
-  const res = await fetch(`${API}/auth/dev-login`, {
+  const res = await fetch(`${API}/guest/${guestToken}/join`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ displayName: `Bot ${i + 1}`, birthDate: "1990-01-01" }),
+    body: JSON.stringify({ displayName: `Bot ${i + 1}` }),
   });
-  const { token } = DevLoginResponse.parse(await res.json());
-  const room = await new Client(REALM).joinOrCreate(REALM_ROOM_NAME, { token, sessionId });
-  room.onMessage(RealmMessage.pose, () => {});
-  room.onMessage(RealmMessage.emote, () => {});
+  if (!res.ok) throw new Error(`guest join failed (${res.status}): ${await res.text()}`);
+  const { realmTicket, sessionId } = JoinSessionResponse.parse(await res.json());
+  const room = await new Client(REALM).joinOrCreate(REALM_ROOM_NAME, {
+    ticket: realmTicket,
+    sessionId,
+  });
+  for (const type of [
+    RealmMessage.pose,
+    RealmMessage.emote,
+    RealmMessage.media,
+    RealmMessage.notice,
+  ]) {
+    room.onMessage(type, () => {});
+  }
+  room.onLeave((code) => {
+    console.log(`Bot ${i + 1} left (code ${code})`);
+  });
   const position = randomPoint();
   return {
     room,
@@ -60,7 +79,7 @@ async function startBot(i: number): Promise<Bot> {
 }
 
 const bots = await Promise.all(Array.from({ length: count }, (_, i) => startBot(i)));
-console.log(`${bots.length} bots walking in session "${sessionId}" for ${seconds}s`);
+console.log(`${bots.length} bots walking around for ${seconds}s`);
 
 let last = performance.now();
 const tick = setInterval(() => {

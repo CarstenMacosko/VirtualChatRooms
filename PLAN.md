@@ -115,6 +115,14 @@ Zone            id, roomId, kind (conversation|game|quiet), shape(JSON)
 GameDefinition  id, version, minPlayers, maxPlayers, bundleUrl
 ```
 
+**As built in Phase 2:**
+
+- `users.friendCode` is added.
+- Guest links are their own `guest_links` table (token, session, expiry), not columns on invites.
+- Co-hosts live in the realm room rather than the database, because they only matter while the session is live.
+- The session id doubles as the LiveKit room name.
+- `Participant` history isn't recorded yet.
+
 `Avatar.recipe` stores the creator's parameters (morph weights, colors, hair/outfit choices), so avatars can be regenerated when the base model improves.
 
 ### 3.3 Room manifest (versioned contract)
@@ -321,7 +329,7 @@ Rendering notes for this style:
    - **in-app**, over a presence WebSocket with a ringing UI
    - **Web Push**, when the app is closed
    - **shareable guest link** for anyone without an account
-3. Invitee accepts → API mints a LiveKit token (scoped to that room, with publish/subscribe grants) and a realm join ticket.
+3. Invitee accepts → API issues a short-lived realm ticket carrying their role. The realm server admits them (checking lock and removals) and mints their LiveKit token, scoped to that session's media room ([ADR 0013](docs/adr/0013-realm-mints-media-tokens.md)).
 4. Join screen: mic check with level meter, echo-cancellation tips (headphones recommended), avatar preview.
 5. Spawn at the room's spawn point. Late joiners can join any time while the session is live.
 
@@ -459,7 +467,7 @@ export interface GameModule<S, M> {
 
 **Status (2026-10-21):** built and verified locally: 11 people (1 browser + 10 bots) moving in the sample room with zero dropped packets; 121 fps on a laptop with the full-density room and one avatar. Frame rate with 10+ avatars, and on phones, is still to be measured. Two deliberate interim choices:
 
-- **Pose stream goes through the realm server for now** (binary relay with the sender's id), behind a `PoseHub` interface. LiveKit isn't part of the local stack until voice arrives, so Phase 2 moves poses onto LiveKit's lossy data channel as ADR 0006 specifies. Nothing outside `PoseHub`/the realm hook changes.
+- **Pose stream goes through the realm server for now** (binary relay with the sender's id), behind a `PoseHub` interface. LiveKit isn't part of the local stack until voice arrives, so Phase 2 moves poses onto LiveKit's lossy data channel as ADR 0006 specifies. Nothing outside `PoseHub`/the realm hook changes. _(Done in Phase 2.)_
 - **The sample room is procedural** (built from shapes in `packages/engine/src/room/sampleRoom.ts`) rather than a downloaded scan, so every client generates identical splats, collision matches exactly, and there's no third-party asset license. Scanned rooms load through `SplatMesh({ url })` in Phase 4.
 - **The avatar is a generated CC0 VRM 1.0 mannequin** with procedural animation (`ProceduralAnimator`); Phase 3 swaps in real avatars and a clip library without touching the rest of the engine.
 
@@ -471,6 +479,27 @@ export interface GameModule<S, M> {
 - **Exit:** 10 browser tabs/bots walk around the same room smoothly; 60 fps desktop / 30 fps phone.
 
 ### Phase 2: Voice, video sidebar & calling (weeks 7–12)
+
+**Status (2026-10-22):** built and verified locally, except with real cameras and microphones (the test browser blocks them). What works end to end:
+
+- **Contacts:** friend codes, requests, labels, groups, live presence.
+- **Calling:** start a gathering by everyone, groups or people. Contacts ring in-app over `GET /events` (server-sent events) with a chime, plus a browser notification if the tab is in the background. Answering, declining, a 45 s miss timeout, and the host seeing each answer all work. Missed calls can still join from "Live now".
+- **Guest links:** for people without accounts. Only a display name is asked for and nothing is stored.
+- **Realm:** tickets with roles, co-hosts, lock, remove (no rejoin), mute and camera-off (enforced through LiveKit's server API), end for everyone, and the host-left grace period (2 min, or 5 min for the owner's first arrival), which reports back to the API.
+- **Media:** LiveKit voice and video run through a spatial audio graph (HRTF panner per person following their avatar, per-person volume). Audio subscriptions go to the nearest 20 people within 20 m. Poses go over the LiveKit data channel, with the realm relay as fallback (ADR 0006 note). Speaking indicators work.
+- **Video sidebar:** you first, then pinned, then recent speakers, then nearest, with initials tiles for anyone whose camera is off.
+- **Verification:** `pnpm smoke` (23 checks) covers the whole flow. In the browser, host and invitee were checked with LiveKit connected and poses arriving only over LiveKit, plus a guest and 5 guest-link bots in one room.
+
+Not done yet, or not measured:
+
+- **Web Push** for when the app is closed. It needs VAPID keys and a service worker. In-app rings and background-tab notifications cover the open-app case.
+- **Avatar-headshot tiles:** waiting on Phase 3 avatars. **Transfer host**, **double-click a tile to walk over**, a **collapsible sidebar** and a **visible-tile cap** aren't built. Adaptive stream already pauses tiles that are off screen.
+- **The ambient bus** arrives with side conversations. Today every voice goes to the conversation bus.
+- **Simulcast layers** are 180p and 360p. 720p is left out until pinned tiles get bigger.
+- **Single API instance only:** live events and ring timers are in memory. Running several needs Redis pub/sub behind `LiveHub`.
+- **Exit criteria not yet measured:** 25 cameras at ≤ 4 Mbps, ≥ 60 fps with 25 people, and invite-to-joined time with real devices.
+
+Planned scope:
 
 - LiveKit audio publish/subscribe; token minting in API
 - Spatial audio graph (two buses, MVP routing); per-person volume; speaking indicators

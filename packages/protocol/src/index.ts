@@ -4,3 +4,6 @@ export * from "./manifest";
 export * from "./pose";
 export * from "./realm";
 export * from "./relay";
+export * from "./events";
+export * from "./sessions";
+export * from "./social";

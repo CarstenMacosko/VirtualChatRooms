@@ -6,6 +6,7 @@ export * from "./input/intents";
 export * from "./locomotion/CharacterController";
 export * from "./locomotion/physics";
 export * from "./math";
+export * from "./media/interest";
 export * from "./net/PoseBuffer";
 export * from "./net/PoseHub";
 export * from "./net/PoseSender";

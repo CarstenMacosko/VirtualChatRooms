@@ -122,4 +122,16 @@ describe("PoseHub", () => {
     hub.retain(new Set(["alice"]));
     expect(hub.sample("bob", 1000)).toBeNull();
   });
+
+  it("accepts the same pose from LiveKit and the realm relay once", async () => {
+    const { PoseHub } = await import("../src/net/PoseHub");
+    const { encodePose, encodeRelayedPose } = await import("@vcr/protocol");
+    const hub = new PoseHub();
+    hub.ingestPose("alice", encodePose(pose(1, 0, 1)), 1000);
+    // Same sequence number via the fallback path: a duplicate, so its contents are ignored.
+    hub.ingest(encodeRelayedPose("alice", encodePose(pose(1, 0, 99))), 1010);
+    hub.ingestPose("alice", new Uint8Array([9]), 1010); // garbage
+    expect(hub.dropped).toBe(1);
+    expect(hub.sample("alice", 1010)!.position[0]).toBe(1);
+  });
 });

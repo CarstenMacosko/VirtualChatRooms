@@ -1,9 +1,25 @@
-import type { z } from "zod";
-import { ApiError, DevLoginResponse, HealthResponse, type DevLoginRequest } from "@vcr/protocol";
+import { z } from "zod";
+import {
+  ApiError,
+  ContactsResponse,
+  DevLoginResponse,
+  GuestLinkInfo,
+  GuestLinkResponse,
+  HealthResponse,
+  JoinSessionResponse,
+  MeResponse,
+  RoomsResponse,
+  SessionInfo,
+  SessionsResponse,
+  type DevLoginRequest,
+  type SaveGroupRequest,
+  type StartSessionRequest,
+} from "@vcr/protocol";
+import { useAuth } from "./auth";
 
 /** Thin fetch wrapper for apps/api. Vite proxies /api to the API in development. */
 
-const API_BASE = "/api";
+export const API_BASE = "/api";
 
 export class ApiRequestError extends Error {
   constructor(
@@ -15,13 +31,22 @@ export class ApiRequestError extends Error {
   }
 }
 
+const NoContent = z.unknown();
+
 async function request<T>(schema: z.ZodType<T>, path: string, init?: RequestInit): Promise<T> {
+  const token = useAuth.getState().auth?.token;
   const res = await fetch(API_BASE + path, {
     ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
+    headers: {
+      ...(init?.body !== undefined && { "content-type": "application/json" }),
+      ...(token && { authorization: `Bearer ${token}` }),
+      ...init?.headers,
+    },
   });
-  const body: unknown = await res.json().catch(() => null);
+  const body: unknown = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
+    // An expired or revoked session: sign out so the user can sign in again.
+    if (res.status === 401 && token) useAuth.getState().signOut();
     const error = ApiError.safeParse(body);
     throw new ApiRequestError(
       res.status,
@@ -32,8 +57,47 @@ async function request<T>(schema: z.ZodType<T>, path: string, init?: RequestInit
   return schema.parse(body);
 }
 
+const post = (body?: unknown): RequestInit => ({
+  method: "POST",
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+const json = (method: string, body: unknown): RequestInit => ({
+  method,
+  body: JSON.stringify(body),
+});
+
 export const api = {
   health: () => request(HealthResponse, "/health"),
-  devLogin: (body: DevLoginRequest) =>
-    request(DevLoginResponse, "/auth/dev-login", { method: "POST", body: JSON.stringify(body) }),
+  devLogin: (body: DevLoginRequest) => request(DevLoginResponse, "/auth/dev-login", post(body)),
+  me: () => request(MeResponse, "/me"),
+
+  contacts: () => request(ContactsResponse, "/contacts"),
+  addContact: (friendCode: string) => request(ContactsResponse, "/contacts", post({ friendCode })),
+  acceptContact: (userId: string) =>
+    request(ContactsResponse, `/contacts/${userId}/accept`, post()),
+  removeContact: (userId: string) =>
+    request(ContactsResponse, `/contacts/${userId}`, { method: "DELETE" }),
+  labelContact: (userId: string, label: string | null) =>
+    request(ContactsResponse, `/contacts/${userId}`, json("PATCH", { label })),
+  createGroup: (body: SaveGroupRequest) => request(ContactsResponse, "/contact-groups", post(body)),
+  updateGroup: (id: string, body: SaveGroupRequest) =>
+    request(ContactsResponse, `/contact-groups/${id}`, json("PUT", body)),
+  deleteGroup: (id: string) =>
+    request(ContactsResponse, `/contact-groups/${id}`, { method: "DELETE" }),
+
+  rooms: () => request(RoomsResponse, "/rooms"),
+  sessions: () => request(SessionsResponse, "/sessions"),
+  session: (id: string) => request(SessionInfo, `/sessions/${id}`),
+  startSession: (body: StartSessionRequest) => request(SessionInfo, "/sessions", post(body)),
+  joinSession: (id: string) => request(JoinSessionResponse, `/sessions/${id}/join`, post()),
+  declineSession: (id: string) => request(NoContent, `/sessions/${id}/decline`, post()),
+  endSession: (id: string) => request(NoContent, `/sessions/${id}/end`, post()),
+  inviteMore: (id: string, userIds: string[]) =>
+    request(SessionInfo, `/sessions/${id}/invites`, post({ userIds })),
+  createGuestLink: (id: string) =>
+    request(GuestLinkResponse, `/sessions/${id}/guest-links`, post()),
+
+  guestLink: (token: string) => request(GuestLinkInfo, `/guest/${token}`),
+  guestJoin: (token: string, displayName: string) =>
+    request(JoinSessionResponse, `/guest/${token}/join`, post({ displayName })),
 };

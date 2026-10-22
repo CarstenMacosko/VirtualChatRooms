@@ -1,17 +1,31 @@
-import { type AuthContext, type Client, Room, ServerError, validate } from "@colyseus/core";
 import {
+  type AuthContext,
+  type Client,
+  type Delayed,
+  Room,
+  ServerError,
+  validate,
+} from "@colyseus/core";
+import {
+  canModerate,
   ClientMessages,
   decodePose,
   encodeRelayedPose,
   type EmoteBroadcast,
+  HOST_ARRIVAL_MS,
+  HOST_GRACE_MS,
   MAX_POSE_BYTES,
+  type Notice,
   type ParticipantRole,
+  RealmCloseCode,
+  RealmJoinError,
   RealmJoinOptions,
   RealmMessage,
-  type SessionClaims,
+  type RealmTicketClaims,
 } from "@vcr/protocol";
-import { verifySessionToken } from "./auth";
+import { issueInternalToken, verifyRealmTicket } from "./auth";
 import { env } from "./env";
+import { MediaControl } from "./media";
 import { Participant, SessionState } from "./state";
 
 /** MVP target: 25 people per session (PLAN.md § 10). */
@@ -20,22 +34,104 @@ export const MAX_PARTICIPANTS = 25;
 /** Poses arrive at up to 15 Hz plus occasional emotes; clients far above this get disconnected. */
 const MAX_MESSAGES_PER_SECOND = 40;
 
-/** One instance per live session, matched by `sessionId`. */
+const media = new MediaControl(env.LIVEKIT_URL, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
+
+const isHost = (role: string) => role === "owner" || role === "cohost";
+
+/**
+ * One instance per live session, matched by `sessionId`. The API decides who may enter (realm
+ * tickets); this room enforces the rest: lock, removals, host controls, and ending the session
+ * when no host has been present for a while (PLAN.md § 4.4).
+ */
 export class SessionRoom extends Room<{ state: SessionState }> {
   override maxClients = MAX_PARTICIPANTS;
   override state = new SessionState();
   override maxMessagesPerSecond = MAX_MESSAGES_PER_SECOND;
+  // The room outlives brief moments with nobody in it; endSession() disposes it.
+  override autoDispose = false;
+
+  /** The API's session id; also the LiveKit room name. */
+  private sessionKey = "";
+  /** Account ids a host removed; they can't come back into this session. */
+  private removed = new Set<string>();
+  /** Account ids promoted to co-host, so they keep the role if they reconnect. */
+  private cohosts = new Set<string>();
+  private hostAbsence: Delayed | null = null;
+  private ended = false;
 
   override messages = {
     [RealmMessage.emote]: validate(ClientMessages.emote, (client, message) => {
       const broadcast: EmoteBroadcast = { from: client.sessionId, emote: message.emote };
       this.broadcast(RealmMessage.emote, broadcast);
     }),
+
+    [RealmMessage.mediaState]: validate(ClientMessages.mediaState, (client, message) => {
+      const p = this.state.participants.get(client.sessionId);
+      if (!p) return;
+      p.muted = !message.micOn;
+      p.cameraOn = message.cameraOn;
+      p.onMedia = message.connected;
+    }),
+
+    [RealmMessage.hostMute]: validate(ClientMessages.hostMute, (client, { target }) => {
+      const p = this.moderate(client, target);
+      if (!p) return;
+      p.muted = true;
+      this.notify(target, { kind: "mutedByHost", by: client.sessionId });
+      this.media(() => media.muteMicrophone(this.sessionKey, target));
+    }),
+
+    [RealmMessage.hostCameraOff]: validate(ClientMessages.hostCameraOff, (client, { target }) => {
+      const p = this.moderate(client, target);
+      if (!p) return;
+      p.cameraOn = false;
+      this.notify(target, { kind: "cameraOffByHost", by: client.sessionId });
+      this.media(() => media.muteCamera(this.sessionKey, target));
+    }),
+
+    [RealmMessage.hostRemove]: validate(ClientMessages.hostRemove, (client, { target }) => {
+      const p = this.moderate(client, target);
+      if (!p) return;
+      this.removed.add(p.userId);
+      this.cohosts.delete(p.userId);
+      this.clients.getById(target)?.leave(RealmCloseCode.removed);
+      this.media(() => media.remove(this.sessionKey, target));
+    }),
+
+    [RealmMessage.setLocked]: validate(ClientMessages.setLocked, (client, { locked }) => {
+      const actor = this.state.participants.get(client.sessionId);
+      if (actor && isHost(actor.role)) this.state.locked = locked;
+    }),
+
+    [RealmMessage.setCoHost]: validate(ClientMessages.setCoHost, (client, { target, cohost }) => {
+      const actor = this.state.participants.get(client.sessionId);
+      const p = this.state.participants.get(target);
+      if (actor?.role !== "owner" || !p) return;
+      if (cohost && p.role === "member") {
+        p.role = "cohost";
+        this.cohosts.add(p.userId);
+        this.notify(target, { kind: "promoted", by: client.sessionId });
+      } else if (!cohost && p.role === "cohost") {
+        p.role = "member";
+        this.cohosts.delete(p.userId);
+        this.notify(target, { kind: "demoted", by: client.sessionId });
+      }
+    }),
+
+    [RealmMessage.endSession]: validate(ClientMessages.endSession, (client) => {
+      if (this.state.participants.get(client.sessionId)?.role === "owner") void this.endSession();
+    }),
   };
 
-  override onCreate() {
-    // Pose relay (Phase 1): validate, stamp with the sender, forward to everyone else. Phase 2
-    // moves poses to LiveKit's lossy data channel (ADR 0006).
+  override onCreate(options: unknown) {
+    this.sessionKey = RealmJoinOptions.shape.sessionId.parse(
+      (options as { sessionId?: unknown }).sessionId,
+    );
+    // If the owner never shows up, don't keep the room open forever.
+    this.hostAbsence = this.clock.setTimeout(() => void this.endSession(), HOST_ARRIVAL_MS);
+
+    // Fallback pose relay, used while a client has no LiveKit data channel (ADR 0006): validate,
+    // stamp with the sender, forward to everyone else.
     this.onMessageBytes(RealmMessage.pose, (client, bytes: Uint8Array) => {
       if (bytes.byteLength > MAX_POSE_BYTES) return;
       try {
@@ -51,28 +147,109 @@ export class SessionRoom extends Room<{ state: SessionState }> {
 
   override async onAuth(_client: Client, options: unknown, _context: AuthContext) {
     const parsed = RealmJoinOptions.safeParse(options);
-    if (!parsed.success) throw new ServerError(400, "invalid join options");
+    if (!parsed.success) throw new ServerError(RealmJoinError.invalid, "invalid join options");
+    let claims: RealmTicketClaims;
     try {
-      return await verifySessionToken(parsed.data.token, env.SESSION_TOKEN_SECRET);
+      claims = await verifyRealmTicket(parsed.data.ticket, env.SESSION_TOKEN_SECRET);
     } catch {
-      throw new ServerError(401, "invalid or expired session token");
+      throw new ServerError(RealmJoinError.badTicket, "invalid or expired ticket");
     }
+    if (claims.sessionId !== this.sessionKey) {
+      throw new ServerError(RealmJoinError.invalid, "ticket is for another session");
+    }
+    if (this.ended) throw new ServerError(RealmJoinError.ended, "this gathering has ended");
+    if (this.removed.has(claims.sub)) {
+      throw new ServerError(RealmJoinError.removed, "a host removed you from this gathering");
+    }
+    if (this.state.locked && !isHost(this.roleFor(claims))) {
+      throw new ServerError(RealmJoinError.locked, "the host locked this gathering");
+    }
+    return claims;
   }
 
-  override onJoin(client: Client) {
-    const claims = client.auth as SessionClaims;
-    // Phase 0: the first person in becomes owner. From Phase 2 the API decides roles, because only
-    // a room's owner may start a session in it (PLAN.md § 4.4).
-    const role: ParticipantRole =
-      this.state.participants.size === 0 ? "owner" : claims.kind === "guest" ? "guest" : "member";
+  override async onJoin(client: Client) {
+    const claims = client.auth as RealmTicketClaims;
+    const role = this.roleFor(claims);
     this.state.participants.set(
       client.sessionId,
       new Participant({ userId: claims.sub, name: claims.name, role }),
     );
+    if (isHost(role)) this.cancelHostAbsence();
+
+    try {
+      client.send(
+        RealmMessage.media,
+        await media.grant(this.sessionKey, client.sessionId, claims.name),
+      );
+    } catch (err) {
+      console.warn("[realm] could not mint a media token", err);
+      client.send(RealmMessage.media, { url: null, token: null });
+    }
   }
 
   override onLeave(client: Client) {
     this.state.participants.delete(client.sessionId);
-    // Phase 2: when the owner and all co-hosts are gone, start the 2-minute "host left" grace period.
+    if (this.ended || this.hostAbsence) return;
+    const hostPresent = [...this.state.participants.values()].some((p) => isHost(p.role));
+    if (!hostPresent) {
+      this.hostAbsence = this.clock.setTimeout(() => void this.endSession(), HOST_GRACE_MS);
+    }
+  }
+
+  /** The role someone has in this room: their ticket's, unless the owner promoted them. */
+  private roleFor(claims: RealmTicketClaims): ParticipantRole {
+    if (claims.role === "member" && this.cohosts.has(claims.sub)) return "cohost";
+    return claims.role;
+  }
+
+  /** The target participant, if `client` may moderate them. */
+  private moderate(client: Client, target: string) {
+    const actor = this.state.participants.get(client.sessionId);
+    const p = this.state.participants.get(target);
+    if (!actor || !p || target === client.sessionId) return null;
+    if (!canModerate(actor.role as ParticipantRole, p.role as ParticipantRole)) return null;
+    return p;
+  }
+
+  private notify(target: string, notice: Notice) {
+    this.clients.getById(target)?.send(RealmMessage.notice, notice);
+  }
+
+  /** Runs a LiveKit server call without letting a media outage break room logic. */
+  private media(call: () => Promise<unknown>) {
+    call().catch((err: unknown) => console.warn("[realm] LiveKit call failed", err));
+  }
+
+  private cancelHostAbsence() {
+    this.hostAbsence?.clear();
+    this.hostAbsence = null;
+  }
+
+  /** Ends the session for everyone and tells the API, which tells anyone still being rung. */
+  private async endSession() {
+    if (this.ended) return;
+    this.ended = true;
+    this.cancelHostAbsence();
+    for (const client of this.clients) client.leave(RealmCloseCode.sessionEnded);
+    await this.reportEnded();
+    await this.disconnect(RealmCloseCode.sessionEnded);
+  }
+
+  private async reportEnded() {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(`${env.API_URL}/internal/sessions/${this.sessionKey}/ended`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${await issueInternalToken(env.SESSION_TOKEN_SECRET)}`,
+          },
+        });
+        if (res.ok) return;
+      } catch {
+        // API unreachable; retry below
+      }
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
+    console.warn(`[realm] could not report session ${this.sessionKey} ended`);
   }
 }

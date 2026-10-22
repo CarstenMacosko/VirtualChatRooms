@@ -13,9 +13,6 @@ const Env = z.object({
   PGLITE_DIR: z.string().default(fileURLToPath(new URL("../.data/pglite", import.meta.url))),
   SESSION_TOKEN_SECRET: z.string().min(32),
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
-  LIVEKIT_URL: z.string().default("ws://localhost:7880"),
-  LIVEKIT_API_KEY: z.string().default("devkey"),
-  LIVEKIT_API_SECRET: z.string().default("secret"),
 });
 export type Env = z.infer<typeof Env>;
 

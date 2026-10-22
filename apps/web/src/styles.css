@@ -42,6 +42,25 @@ button:disabled {
   opacity: 0.5;
   cursor: default;
 }
+button.secondary {
+  background: var(--panel-2);
+  color: var(--text);
+}
+button.danger {
+  background: var(--bad);
+  color: #0b0f1c;
+}
+button.accept {
+  background: var(--ok);
+  color: #0b0f1c;
+}
+button.toggle {
+  background: var(--panel-2);
+  color: var(--text);
+}
+button.toggle.on {
+  background: #2a3563;
+}
 button.link {
   background: none;
   color: var(--muted);
@@ -98,11 +117,11 @@ input {
   padding: 10px 12px;
 }
 
-/* Lobby */
+/* In a gathering */
 .lobby {
   height: 100vh;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr auto;
 }
 .topbar {
   display: flex;
@@ -139,23 +158,6 @@ input {
 .scene {
   position: relative;
   min-height: 0;
-}
-.emote-bar {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 8px;
-  background: rgb(21 27 46 / 0.85);
-  padding: 8px;
-  border-radius: 999px;
-}
-.emote-bar button {
-  background: var(--panel-2);
-  font-size: 22px;
-  padding: 6px 10px;
-  border-radius: 999px;
 }
 .banner {
   position: absolute;
@@ -202,7 +204,7 @@ input {
   }
 }
 
-/* People sidebar (becomes the video sidebar in Phase 2) */
+/* Video sidebar */
 .sidebar {
   background: var(--panel);
   padding: 12px;
@@ -224,12 +226,83 @@ input {
   gap: 10px;
 }
 .tile {
+  position: relative;
   background: var(--panel-2);
   border-radius: var(--radius);
+  outline: 3px solid transparent;
+  transition: outline-color 0.15s;
+}
+.tile.speaking {
+  outline-color: var(--ok);
+}
+.tile.pinned .tile-label span:first-child::before {
+  content: "📌 ";
+}
+.tile-media {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius) var(--radius) 0 0;
   overflow: hidden;
+  background: #0b0f1c;
+}
+.tile-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.tile-media video.mirror {
+  transform: scaleX(-1);
+}
+.tile-muted {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  font-size: 14px;
+}
+.tile-more {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 0 8px;
+  background: rgb(11 15 28 / 0.6);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 24px;
+}
+.tile-menu {
+  position: absolute;
+  z-index: 5;
+  top: 34px;
+  right: 6px;
+  min-width: 170px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.5);
+}
+.tile-menu button {
+  text-align: left;
+  background: none;
+  color: var(--text);
+  font-weight: 500;
+  padding: 8px 10px;
+}
+.tile-menu button:hover:not(:disabled) {
+  background: var(--panel-2);
+}
+.tile-menu button.danger {
+  color: var(--bad);
+}
+.tile-menu .volume {
+  padding: 6px 10px;
+  font-size: 13px;
 }
 .tile-face {
-  aspect-ratio: 16 / 10;
+  width: 100%;
+  height: 100%;
   display: grid;
   place-items: center;
   font-size: 36px;
@@ -348,4 +421,303 @@ input {
   background: rgb(255 255 255 / 0.2);
   color: var(--text);
   touch-action: none;
+}
+
+/* Bottom call bar */
+.bottombar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--panel);
+  flex-wrap: wrap;
+}
+.bottombar .spacer {
+  flex: 1;
+}
+.bottombar .emotes {
+  display: flex;
+  gap: 4px;
+}
+.bottombar .emotes button {
+  background: var(--panel-2);
+  font-size: 20px;
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+.toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.4);
+}
+
+/* Shared bits */
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.row.end {
+  justify-content: flex-end;
+}
+select {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid #2c365a;
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #4a5378;
+  vertical-align: middle;
+}
+.dot.on {
+  background: var(--ok);
+}
+.list,
+.checklist {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.checklist {
+  max-height: 260px;
+  overflow-y: auto;
+}
+.checklist label,
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.chip {
+  display: inline-flex;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  font-size: 14px;
+  cursor: pointer;
+}
+.chip input {
+  display: none;
+}
+.chip.on {
+  background: var(--accent);
+  color: #0b0f1c;
+}
+
+/* Home */
+.home {
+  min-height: 100vh;
+}
+.pill.code {
+  font-weight: 500;
+  color: var(--text);
+  padding: 6px 12px;
+}
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  padding: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.panel {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: grid;
+  gap: 20px;
+  align-content: start;
+}
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+.panel h3 {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.panel p {
+  margin: 0 0 12px;
+}
+.panel form.row input {
+  flex: 1;
+  min-width: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.live-now .list li {
+  background: #1f3a33;
+}
+.group-form {
+  display: grid;
+  gap: 10px;
+}
+.callout {
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+/* Pre-join */
+.prejoin {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.card.wide {
+  width: min(560px, 100%);
+}
+.preview {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #0b0f1c;
+}
+.preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+.preview-off {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.preview-name {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgb(11 15 28 / 0.7);
+  font-size: 14px;
+}
+.mic-meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.mic-meter div {
+  height: 100%;
+  width: 0%;
+  background: var(--ok);
+  transition: width 0.05s linear;
+}
+
+/* Incoming call and toasts */
+.ring {
+  position: fixed;
+  z-index: 50;
+  top: 16px;
+  right: 16px;
+  width: min(380px, calc(100vw - 32px));
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px 14px;
+  align-items: center;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.6);
+  animation: ring-in 0.25s ease-out;
+}
+.ring .row {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+.ring-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0b0f1c;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes ring-in {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+}
+@keyframes pulse {
+  50% {
+    box-shadow: 0 0 0 10px rgb(124 140 255 / 0.15);
+  }
+}
+.toasts {
+  position: fixed;
+  z-index: 40;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast-item {
+  margin: 0;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.4);
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.5);
+}
+.modal h2 {
+  margin: 0;
 }

@@ -10,6 +10,8 @@ export const Participant = schema(
     role: t.string(),
     muted: t.boolean().default(false),
     cameraOn: t.boolean().default(false),
+    /** Connected to LiveKit; see ParticipantView.onMedia. */
+    onMedia: t.boolean().default(false),
     // Added in later phases: groupId (side conversations), seatId (sitting).
   },
   "Participant",

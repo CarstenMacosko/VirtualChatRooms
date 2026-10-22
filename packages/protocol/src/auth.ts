@@ -44,3 +44,7 @@ export const SessionClaims = z.object({
   kind: z.enum(["user", "guest"]),
 });
 export type SessionClaims = z.infer<typeof SessionClaims>;
+
+/** `GET /me`: the public profile plus the friend code others use to add you. */
+export const MeResponse = PublicUser.extend({ friendCode: z.string() });
+export type MeResponse = z.infer<typeof MeResponse>;

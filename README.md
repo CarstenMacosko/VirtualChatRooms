@@ -2,7 +2,7 @@
 
 > Working title. A metaverse built only for friends and family. You hang out and video-call as 3D avatars, inside real rooms you've scanned with your own phone, in the browser.
 
-**Status:** Phase 1 (shared space) is working: walk around a Gaussian-splat living room as a VRM avatar with physics, third- and first-person cameras, touch controls, and everyone else moving smoothly in real time. Voice, calling and the video sidebar come next (Phase 2). The full technical design and build roadmap are in [PLAN.md](PLAN.md).
+**Status:** Phases 1 and 2 are working. You can walk around a Gaussian-splat living room as a VRM avatar with physics, cameras and touch controls. You can add family by friend code, start a gathering that rings them, and talk with spatial voice that comes from each person's avatar. A FaceTime-style video sidebar sits beside the room, and hosts can mute, turn off cameras, remove people, lock the room and promote co-hosts. Kids without accounts can join by guest link. The avatar creator (Phase 3) and room scanning (Phase 4) come next. The full technical design and build roadmap are in [PLAN.md](PLAN.md).
 
 ---
 
@@ -35,11 +35,11 @@ flowchart LR
     Audio[Spatial audio graph<br/>Web Audio API]
   end
 
-  Client -- REST / auth --> API[API server<br/>Fastify + Postgres]
+  Client -- REST / auth<br/>live events (rings) --> API[API server<br/>Fastify + Postgres]
   Client -- authoritative state<br/>presence, seats, groups, games --> Realm[Realm server<br/>Colyseus]
   Client <-- voice + avatar pose stream --> SFU[LiveKit SFU<br/>WebRTC]
-  API -- mints media tokens --> SFU
-  Realm -- subscription rules --> SFU
+  API -- realm tickets --> Realm
+  Realm -- media tokens, host controls,<br/>subscription rules --> SFU
 
   Client -- upload room video<br/>or existing scan --> Storage[(Object storage<br/>+ CDN)]
   API -- enqueue job --> Queue[(Redis queue)]
@@ -80,8 +80,8 @@ flowchart LR
 ```
 apps/
   web/              React + R3F client
-  api/              REST API: auth, contacts, rooms, avatars, sessions, media tokens
-  realm/            Colyseus server: presence, session state, groups, seats, games
+  api/              REST API: auth, contacts, rooms, sessions, ringing (server-sent events), guest links
+  realm/            Colyseus server: session state, host controls, LiveKit tokens; later groups, seats, games
 services/
   capture/          Python CPU worker: capture provider calls, post-processing, manifest
 packages/
@@ -90,6 +90,8 @@ packages/
   protocol/         Shared message types and Zod schemas (client ⇄ servers)
   games-sdk/        Mini-game plugin interface (post-MVP, but defined early)
   ui/               Shared React UI components
+tools/
+  livekit/          Starts `livekit-server --dev` during `pnpm dev` when it's installed
 infra/
   docker-compose.yml   Postgres, Redis, LiveKit, SeaweedFS (S3) for local dev
 scripts/
@@ -110,22 +112,28 @@ corepack enable pnpm
 
 Docker is optional for now. Without it the API uses embedded [PGlite](https://pglite.dev) (Postgres in-process, stored in `apps/api/.data/`).
 
+For voice and video, install the LiveKit server once. `pnpm dev` starts it in dev mode when it's on your PATH, and runs everything else without voice and video when it isn't:
+
+```bash
+brew install livekit
+```
+
 Install dependencies:
 
 ```bash
 pnpm install
 ```
 
-Start the web client, API and realm server together. The first run creates `.env` from `.env.example`.
+Start the web client, API, realm server and LiveKit together. The first run creates `.env` from `.env.example`.
 
 ```bash
 pnpm dev
 ```
 
-Then open http://localhost:5173, sign in with any name and an adult birth date, and you're standing in the sample living room. Open a private window and sign in as someone else to see two people, or fill the room with bots:
+Then open http://localhost:5173 and sign in with any name and an adult birth date. To try calling, sign in as a second person in a private window (or at http://gran.localhost:5173, which keeps a separate sign-in). Add each other by friend code (top right), then click **Start and ring**. The other window rings; answer it, check your mic and camera, and join. In the gathering, **Invite → Copy guest link** gives a link for someone without an account. You can also fill the room with walking bots from that link:
 
 ```bash
-pnpm bots 10
+pnpm bots 10 http://localhost:5173/join/<token>
 ```
 
 | Control              | Desktop                                             | Phone / tablet                |
@@ -138,13 +146,14 @@ pnpm bots 10
 | First / third person | V                                                   | —                             |
 | Gamepad              | Left stick move, right stick look, A jump, Y camera | —                             |
 
-URL options: `?session=<name>` for a separate room, `?debug` for FPS and network stats, `?quality=low|high` to override the automatic device profile.
+URL options: `?debug` for FPS and network stats (including which transport poses arrive on), `?quality=low|high` to override the automatic device profile. Use headphones when two windows on one computer both have their mics on, or you'll hear echo.
 
-| Service | URL                   | Notes                                                                 |
-| ------- | --------------------- | --------------------------------------------------------------------- |
-| Web     | http://localhost:5173 | Proxies `/api` to the API                                             |
-| API     | http://127.0.0.1:3001 | `GET /health`, `POST /auth/dev-login`, `GET /me`, `POST /media/token` |
-| Realm   | ws://localhost:2567   | Colyseus `session` room                                               |
+| Service | URL                   | Notes                                                                                                        |
+| ------- | --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Web     | http://localhost:5173 | Proxies `/api` to the API                                                                                    |
+| API     | http://127.0.0.1:3001 | Auth, `/contacts`, `/contact-groups`, `/rooms`, `/sessions`, `/guest/:token`, `/events` (server-sent events) |
+| Realm   | ws://localhost:2567   | Colyseus `session` room; mints LiveKit tokens and enforces host controls                                     |
+| LiveKit | ws://localhost:7880   | `livekit-server --dev` (key `devkey`, secret `secret`)                                                       |
 
 With the servers running, check everything end to end:
 
@@ -160,7 +169,7 @@ Other commands: `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format`, `pnpm
 pnpm infra:up
 ```
 
-Then set `DATABASE_URL=postgres://vcr:vcr@localhost:5432/vcr` in `.env` to use real Postgres. Voice/video (Phase 2) needs the LiveKit container; room capture (Phase 4) needs storage and, optionally, a KIRI Engine API key.
+Then set `DATABASE_URL=postgres://vcr:vcr@localhost:5432/vcr` in `.env` to use real Postgres. The compose file also runs LiveKit, in place of the Homebrew one. Room capture (Phase 4) needs storage and, optionally, a KIRI Engine API key.
 
 ## Platform support targets
 

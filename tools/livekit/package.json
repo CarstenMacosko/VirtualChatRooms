@@ -1,0 +1,10 @@
+{
+  "name": "@vcr/livekit-dev",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runs a local LiveKit server for `pnpm dev`, when one is installed.",
+  "scripts": {
+    "dev": "node run.mjs"
+  }
+}

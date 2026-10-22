@@ -20,6 +20,7 @@ import {
 import type { ParticipantView, Quat } from "@vcr/protocol";
 import { colorFor, EMOTE_DURATION_MS, EMOTE_GLYPHS } from "../components/emotes";
 import type { ActiveEmote } from "../lib/realm";
+import type { SpatialAudio } from "../media/SpatialAudio";
 import { AvatarInstance, PLACEHOLDER_AVATAR_URL } from "./AvatarInstance";
 import { RoomSplats } from "./RoomSplats";
 import { TouchControls } from "./TouchControls";
@@ -37,6 +38,8 @@ export interface WorldProps {
   emotes: Record<string, ActiveEmote>;
   now: number;
   poseHub: PoseHub;
+  /** Voices follow avatars; the listener follows the camera. */
+  audio: SpatialAudio | null;
   profile: DeviceProfile;
   debug: boolean;
 }
@@ -101,6 +104,7 @@ export default function World(props: WorldProps) {
             sim={sim}
             input={input}
             poseHub={poseHub}
+            audio={props.audio}
             selfId={props.selfId}
             participants={props.participants}
             anchors={anchors}
@@ -208,6 +212,7 @@ function Simulation(props: {
   sim: Sim;
   input: InputSystem;
   poseHub: PoseHub;
+  audio: SpatialAudio | null;
   /** Null while reconnecting to the realm; the room keeps running locally meanwhile. */
   selfId: string | null;
   participants: ParticipantView[];
@@ -216,7 +221,7 @@ function Simulation(props: {
   stats: RefObject<HTMLPreElement | null> | null;
   splatCount: number;
 }) {
-  const { sim, input, poseHub, selfId, anchors, labels } = props;
+  const { sim, input, poseHub, audio, selfId, anchors, labels } = props;
   const { physics } = sim;
   const size = useThree((s) => s.size);
 
@@ -230,6 +235,7 @@ function Simulation(props: {
         avatar.dispose();
         remotes.current.delete(id);
         anchors.current.delete(id);
+        audio?.forget(id);
       }
     }
     for (const p of props.participants) {
@@ -240,13 +246,14 @@ function Simulation(props: {
       remotes.current.set(p.id, avatar);
     }
     poseHub.retain(ids);
-  }, [props.participants, selfId, poseHub, remoteGroup, anchors]);
+  }, [props.participants, selfId, poseHub, audio, remoteGroup, anchors]);
   useEffect(() => {
     const map = remotes.current;
     return () => map.forEach((a) => a.dispose());
   }, []);
 
   const projected = useMemo(() => new Vector3(), []);
+  const facing = useMemo(() => new Vector3(), []);
   const loop = useRef<LoopState>({
     accumulator: 0,
     previous: [...sim.spawn.position],
@@ -323,6 +330,10 @@ function Simulation(props: {
     );
     state.camera.position.set(...cam.position);
     state.camera.lookAt(...cam.lookAt);
+    if (audio) {
+      state.camera.getWorldDirection(facing);
+      audio.setListener(cam.position, [facing.x, facing.y, facing.z]);
+    }
     if (selfId) {
       if (firstPerson) anchors.current.delete(selfId);
       else anchors.current.set(selfId, [feet[0], feet[1] + LABEL_HEIGHT, feet[2]]);
@@ -337,6 +348,7 @@ function Simulation(props: {
         continue;
       }
       avatar.setVisible(true);
+      audio?.setPosition(id, pose.position);
       avatar.update(dt, {
         position: pose.position,
         yaw: pose.yaw,
@@ -377,6 +389,7 @@ function Simulation(props: {
         `people ${remotes.current.size + 1}`,
         `pos ${c.position.map((v) => v.toFixed(2)).join(", ")}`,
         `loco ${c.loco} · ${c.grounded ? "grounded" : "airborne"} · ${rig.mode}`,
+        `poses in · livekit ${poseHub.received.direct} · relay ${poseHub.received.relayed}`,
         `dropped packets ${poseHub.dropped}`,
       ]);
       l.frames = 0;

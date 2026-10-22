@@ -16,3 +16,4 @@ Each record captures one decision from [PLAN.md § 2](../../PLAN.md#2-key-techni
 | [0010](0010-use-an-existing-room-scanning-service.md)              | Use an existing room-scanning service                | Accepted |
 | [0011](0011-video-sidebar-on-livekit-simulcast-adaptive-stream.md) | Video sidebar on LiveKit simulcast + adaptive stream | Accepted |
 | [0012](0012-session-scoped-signed-asset-urls.md)                   | Session-scoped signed asset URLs                     | Accepted |
+| [0013](0013-realm-mints-media-tokens.md)                           | The realm admits people and mints media tokens       | Accepted |
