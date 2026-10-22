@@ -1,5 +1,6 @@
 import { Client, type Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PoseHub } from "@vcr/engine";
 import {
   type EmoteBroadcast,
   type EmoteId,
@@ -35,6 +36,7 @@ export function useRealmSession(token: string, sessionId: string) {
   const [selfId, setSelfId] = useState<string | null>(null);
   const [emotes, setEmotes] = useState<Record<string, ActiveEmote>>({});
   const roomRef = useRef<Room | null>(null);
+  const [poseHub] = useState(() => new PoseHub());
   // Bumping `attempt` re-runs the effect, which rejoins after a drop or failed join.
   const [attempt, setAttempt] = useState(0);
   const failures = useRef(0);
@@ -61,6 +63,7 @@ export function useRealmSession(token: string, sessionId: string) {
         }
         failures.current = 0;
         roomRef.current = room;
+        poseHub.setSender((bytes) => room.sendBytes(RealmMessage.pose, bytes));
         setSelfId(room.sessionId);
         setStatus("connected");
         setError(null);
@@ -68,12 +71,17 @@ export function useRealmSession(token: string, sessionId: string) {
           const json = (state as { toJSON(): SyncedState }).toJSON();
           setParticipants(Object.entries(json.participants ?? {}).map(([id, p]) => ({ id, ...p })));
         });
+        room.onMessage(RealmMessage.pose, (bytes: Uint8Array) => {
+          poseHub.ingest(bytes, performance.now());
+        });
         room.onMessage(RealmMessage.emote, (msg: EmoteBroadcast) => {
           setEmotes((prev) => ({ ...prev, [msg.from]: { emote: msg.emote, at: Date.now() } }));
         });
         room.onLeave(() => {
           if (cancelled) return; // we left on purpose
           roomRef.current = null;
+          poseHub.setSender(null);
+          poseHub.clear();
           setParticipants([]);
           scheduleRetry();
         });
@@ -89,15 +97,16 @@ export function useRealmSession(token: string, sessionId: string) {
     return () => {
       cancelled = true;
       clearTimeout(retryTimer);
+      poseHub.setSender(null);
       void roomRef.current?.leave();
       roomRef.current = null;
     };
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `attempt` triggers the rejoin
-  }, [token, sessionId, attempt]);
+  }, [token, sessionId, attempt, poseHub]);
 
   const sendEmote = useCallback((emote: EmoteId) => {
     roomRef.current?.send(RealmMessage.emote, { emote });
   }, []);
 
-  return { status, error, participants, selfId, emotes, sendEmote };
+  return { status, error, participants, selfId, emotes, sendEmote, poseHub };
 }

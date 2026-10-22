@@ -2,7 +2,7 @@
 
 > Working title. A metaverse built only for friends and family. You hang out and video-call as 3D avatars, inside real rooms you've scanned with your own phone, in the browser.
 
-**Status:** Phase 0 (foundations) is scaffolded: monorepo, shared protocol, API, realm server, a placeholder 3D lobby and local infrastructure. The full technical design and build roadmap are in [PLAN.md](PLAN.md).
+**Status:** Phase 1 (shared space) is working: walk around a Gaussian-splat living room as a VRM avatar with physics, third- and first-person cameras, touch controls, and everyone else moving smoothly in real time. Voice, calling and the video sidebar come next (Phase 2). The full technical design and build roadmap are in [PLAN.md](PLAN.md).
 
 ---
 
@@ -75,7 +75,7 @@ flowchart LR
 
 ## Repository layout
 
-`services/capture`, `packages/engine` and `packages/ui` are planned and get created in the phase that needs them.
+`services/capture` and `packages/ui` are planned and get created in the phase that needs them.
 
 ```
 apps/
@@ -85,7 +85,8 @@ apps/
 services/
   capture/          Python CPU worker: capture provider calls, post-processing, manifest
 packages/
-  engine/           3D runtime: scene, avatar, locomotion, input intents, audio graph
+  engine/           3D runtime: input intents, physics/locomotion, cameras, pose interpolation,
+                    procedural animation, sample room, device profile (framework-free, tested)
   protocol/         Shared message types and Zod schemas (client ⇄ servers)
   games-sdk/        Mini-game plugin interface (post-MVP, but defined early)
   ui/               Shared React UI components
@@ -93,6 +94,8 @@ infra/
   docker-compose.yml   Postgres, Redis, LiveKit, SeaweedFS (S3) for local dev
 scripts/
   smoke.ts          End-to-end check against running servers
+  bots.ts           Walking bots for multiplayer/load testing
+  generate-placeholder-avatar.ts   Writes the CC0 placeholder VRM in apps/web/public/avatars
 docs/
   adr/              Architecture decision records
 ```
@@ -119,7 +122,23 @@ Start the web client, API and realm server together. The first run creates `.env
 pnpm dev
 ```
 
-Then open http://localhost:5173, sign in with any name and an adult birth date, and open a second browser window (or a private window) to see two people in the same lobby. Add `?session=<name>` to the URL for a separate room.
+Then open http://localhost:5173, sign in with any name and an adult birth date, and you're standing in the sample living room. Open a private window and sign in as someone else to see two people, or fill the room with bots:
+
+```bash
+pnpm bots 10
+```
+
+| Control              | Desktop                                             | Phone / tablet                |
+| -------------------- | --------------------------------------------------- | ----------------------------- |
+| Move                 | WASD or arrow keys                                  | Left-thumb joystick           |
+| Run                  | Hold Shift                                          | Push the joystick all the way |
+| Look                 | Drag with the mouse, or Q / E                       | Drag on the right side        |
+| Jump                 | Space                                               | Jump button                   |
+| Zoom                 | Scroll wheel                                        | —                             |
+| First / third person | V                                                   | —                             |
+| Gamepad              | Left stick move, right stick look, A jump, Y camera | —                             |
+
+URL options: `?session=<name>` for a separate room, `?debug` for FPS and network stats, `?quality=low|high` to override the automatic device profile.
 
 | Service | URL                   | Notes                                                                 |
 | ------- | --------------------- | --------------------------------------------------------------------- |

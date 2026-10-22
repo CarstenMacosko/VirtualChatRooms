@@ -1,0 +1,25 @@
+{
+  "name": "@vcr/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "3D runtime: input intents, locomotion, avatars, pose interpolation, rooms.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.21.0",
+    "@vcr/protocol": "workspace:*",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.5"
+  }
+}

@@ -457,6 +457,12 @@ export interface GameModule<S, M> {
 
 ### Phase 1: Shared space, single player → multiplayer (weeks 3–6)
 
+**Status (2026-10-21):** built and verified locally: 11 people (1 browser + 10 bots) moving in the sample room with zero dropped packets; 121 fps on a laptop with the full-density room and one avatar. Frame rate with 10+ avatars, and on phones, is still to be measured. Two deliberate interim choices:
+
+- **Pose stream goes through the realm server for now** (binary relay with the sender's id), behind a `PoseHub` interface. LiveKit isn't part of the local stack until voice arrives, so Phase 2 moves poses onto LiveKit's lossy data channel as ADR 0006 specifies. Nothing outside `PoseHub`/the realm hook changes.
+- **The sample room is procedural** (built from shapes in `packages/engine/src/room/sampleRoom.ts`) rather than a downloaded scan, so every client generates identical splats, collision matches exactly, and there's no third-party asset license. Scanned rooms load through `SplatMesh({ url })` in Phase 4.
+- **The avatar is a generated CC0 VRM 1.0 mannequin** with procedural animation (`ProceduralAnimator`); Phase 3 swaps in real avatars and a clip library without touching the rest of the engine.
+
 - R3F scene with Spark rendering one **sample splat room** plus a hand-made collision mesh
 - Input → Intent system; Rapier character controller; third/first-person cameras
 - Placeholder VRM avatar with idle/walk/run blend tree

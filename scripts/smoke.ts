@@ -5,7 +5,11 @@
  */
 import { Client } from "@colyseus/sdk";
 import {
+  decodePose,
+  decodeRelayedPose,
   DevLoginResponse,
+  encodePose,
+  LocoState,
   type EmoteBroadcast,
   HealthResponse,
   MediaTokenResponse,
@@ -113,6 +117,21 @@ const received = await emote;
 check(
   "emote broadcast reaches others",
   received.emote === "wave" && received.from === roomA.sessionId,
+);
+
+const relayed = withTimeout(
+  new Promise<Uint8Array>((resolve) => roomB.onMessage(RealmMessage.pose, resolve)),
+  5000,
+  "pose relay",
+);
+roomA.sendBytes(
+  RealmMessage.pose,
+  encodePose({ seq: 1, t: 42, position: [1.5, 0, -0.5], yaw: 1, loco: LocoState.walk }),
+);
+const { from, pose } = decodeRelayedPose(await relayed);
+check(
+  "pose relayed to others with the sender's id",
+  from === roomA.sessionId && decodePose(pose).position[0] === 1.5,
 );
 
 const rejected = await client

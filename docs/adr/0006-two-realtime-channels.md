@@ -15,3 +15,7 @@ Pose data is frequent and loss-tolerant; groups, seats, permissions and games mu
 ## Alternatives considered
 
 One channel for everything (either floods the game server or puts game state on a lossy path).
+
+## Note (2026-10-21)
+
+Phase 1 relays poses through the realm server (`RealmMessage.pose`, binary, with a sender-id envelope) because LiveKit isn't in the local stack yet. The `PoseHub` abstraction keeps the switch to LiveKit's lossy data channel in Phase 2 local to the transport.

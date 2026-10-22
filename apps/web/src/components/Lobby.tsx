@@ -1,11 +1,15 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { type DevLoginResponse, EmoteId, type HealthResponse } from "@vcr/protocol";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { readDeviceProfile } from "../lib/device";
 import { useRealmSession } from "../lib/realm";
 import { EMOTE_GLYPHS } from "./emotes";
-import { LobbyScene } from "./LobbyScene";
 import { PeopleSidebar } from "./PeopleSidebar";
+
+// Three.js, Spark, Rapier and three-vrm are large; load them only once someone is signed in.
+const World = lazy(() => import("../world/World"));
+const debug = new URLSearchParams(window.location.search).has("debug");
 
 /** `?session=<id>` picks which shared lobby to join; everyone on the same id sees each other. */
 function sessionIdFromUrl(): string {
@@ -45,6 +49,7 @@ function useNow(intervalMs: number) {
 export function Lobby({ auth }: { auth: DevLoginResponse }) {
   const signOut = useAuth((s) => s.signOut);
   const [sessionId] = useState(sessionIdFromUrl);
+  const [profile] = useState(readDeviceProfile);
   const realm = useRealmSession(auth.token, sessionId);
   const health = useApiHealth();
   const now = useNow(250);
@@ -72,12 +77,17 @@ export function Lobby({ auth }: { auth: DevLoginResponse }) {
 
       <main className="stage">
         <div className="scene">
-          <LobbyScene
-            participants={realm.participants}
-            selfId={realm.selfId}
-            emotes={realm.emotes}
-            now={now}
-          />
+          <Suspense fallback={<div className="world-loading">Loading room…</div>}>
+            <World
+              participants={realm.participants}
+              selfId={realm.selfId}
+              emotes={realm.emotes}
+              now={now}
+              poseHub={realm.poseHub}
+              profile={profile}
+              debug={debug}
+            />
+          </Suspense>
           <div className="emote-bar" role="toolbar" aria-label="Emotes">
             {EmoteId.options.map((id) => (
               <button

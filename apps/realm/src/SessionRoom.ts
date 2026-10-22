@@ -1,7 +1,10 @@
 import { type AuthContext, type Client, Room, ServerError, validate } from "@colyseus/core";
 import {
   ClientMessages,
+  decodePose,
+  encodeRelayedPose,
   type EmoteBroadcast,
+  MAX_POSE_BYTES,
   type ParticipantRole,
   RealmJoinOptions,
   RealmMessage,
@@ -14,10 +17,14 @@ import { Participant, SessionState } from "./state";
 /** MVP target: 25 people per session (PLAN.md § 10). */
 export const MAX_PARTICIPANTS = 25;
 
+/** Poses arrive at up to 15 Hz plus occasional emotes; clients far above this get disconnected. */
+const MAX_MESSAGES_PER_SECOND = 40;
+
 /** One instance per live session, matched by `sessionId`. */
 export class SessionRoom extends Room<{ state: SessionState }> {
   override maxClients = MAX_PARTICIPANTS;
   override state = new SessionState();
+  override maxMessagesPerSecond = MAX_MESSAGES_PER_SECOND;
 
   override messages = {
     [RealmMessage.emote]: validate(ClientMessages.emote, (client, message) => {
@@ -25,6 +32,22 @@ export class SessionRoom extends Room<{ state: SessionState }> {
       this.broadcast(RealmMessage.emote, broadcast);
     }),
   };
+
+  override onCreate() {
+    // Pose relay (Phase 1): validate, stamp with the sender, forward to everyone else. Phase 2
+    // moves poses to LiveKit's lossy data channel (ADR 0006).
+    this.onMessageBytes(RealmMessage.pose, (client, bytes: Uint8Array) => {
+      if (bytes.byteLength > MAX_POSE_BYTES) return;
+      try {
+        decodePose(bytes);
+      } catch {
+        return; // malformed or from an incompatible client version
+      }
+      this.broadcastBytes(RealmMessage.pose, encodeRelayedPose(client.sessionId, bytes), {
+        except: client,
+      });
+    });
+  }
 
   override async onAuth(_client: Client, options: unknown, _context: AuthContext) {
     const parsed = RealmJoinOptions.safeParse(options);

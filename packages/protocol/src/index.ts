@@ -3,3 +3,4 @@ export * from "./auth";
 export * from "./manifest";
 export * from "./pose";
 export * from "./realm";
+export * from "./relay";

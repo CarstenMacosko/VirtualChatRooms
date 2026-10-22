@@ -1,6 +1,8 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    // Scripts import @vcr/engine, which includes browser input code.
+    "lib": ["ES2023", "DOM"],
     "types": ["node"]
   },
   "include": ["scripts"]

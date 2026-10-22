@@ -31,6 +31,8 @@ export type EmoteId = z.infer<typeof EmoteId>;
 
 export const RealmMessage = {
   emote: "emote",
+  /** Binary avatar pose (see pose.ts). Client → server: raw pose; server → clients: relayed pose. */
+  pose: "pose",
 } as const;
 
 export const ClientMessages = {
