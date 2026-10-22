@@ -56,6 +56,11 @@ export class SessionRoom extends Room<{ state: SessionState }> {
   private removed = new Set<string>();
   /** Account ids promoted to co-host, so they keep the role if they reconnect. */
   private cohosts = new Set<string>();
+  /**
+   * Who hosts right now. Starts as the room owner from their ticket; "transfer host" moves it, and
+   * the original owner then counts as a co-host, including after reconnecting.
+   */
+  private hostUserId: string | null = null;
   private hostAbsence: Delayed | null = null;
   private ended = false;
 
@@ -116,6 +121,21 @@ export class SessionRoom extends Room<{ state: SessionState }> {
         this.cohosts.delete(p.userId);
         this.notify(target, { kind: "demoted", by: client.sessionId });
       }
+    }),
+
+    [RealmMessage.transferHost]: validate(ClientMessages.transferHost, (client, { target }) => {
+      const actor = this.state.participants.get(client.sessionId);
+      const p = this.state.participants.get(target);
+      if (actor?.role !== "owner" || !p || p === actor || p.role === "guest") return;
+      this.hostUserId = p.userId;
+      this.cohosts.delete(p.userId);
+      this.cohosts.add(actor.userId);
+      // Every connection of each person (someone may have two tabs open) gets the new role.
+      for (const other of this.state.participants.values()) {
+        if (other.userId === p.userId) other.role = "owner";
+        else if (other.userId === actor.userId) other.role = "cohost";
+      }
+      this.notify(target, { kind: "nowHost", by: client.sessionId });
     }),
 
     [RealmMessage.endSession]: validate(ClientMessages.endSession, (client) => {
@@ -198,8 +218,11 @@ export class SessionRoom extends Room<{ state: SessionState }> {
 
   /** The role someone has in this room: their ticket's, unless the owner promoted them. */
   private roleFor(claims: RealmTicketClaims): ParticipantRole {
-    if (claims.role === "member" && this.cohosts.has(claims.sub)) return "cohost";
-    return claims.role;
+    if (claims.role === "guest") return "guest";
+    if (claims.role === "owner" && this.hostUserId === null) this.hostUserId = claims.sub;
+    if (claims.sub === this.hostUserId) return "owner";
+    if (claims.role === "owner" || this.cohosts.has(claims.sub)) return "cohost";
+    return "member";
   }
 
   /** The target participant, if `client` may moderate them. */

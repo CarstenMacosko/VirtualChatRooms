@@ -14,7 +14,15 @@ const ROLE_LABEL: Partial<Record<ParticipantRole, string>> = {
   guest: "Guest",
 };
 
-function VideoView({
+const perfNow = () => performance.now();
+
+/**
+ * At most this many tiles carry live video; the rest show as compact rows, which keeps download
+ * bandwidth bounded at 25 people (PLAN.md § 4.6).
+ */
+export const MAX_VIDEO_TILES = 8;
+
+export function VideoView({
   track,
   mirror,
 }: {
@@ -33,19 +41,21 @@ function VideoView({
   return <video ref={ref} autoPlay playsInline muted className={mirror ? "mirror" : undefined} />;
 }
 
-const perfNow = () => performance.now();
-
 /**
  * FaceTime-style video sidebar (PLAN.md § 4.6): you first, then whoever you pinned, then recent
  * speakers, then the nearest people. Tiles without a camera show the person's initial.
+ * Double-clicking someone walks your avatar over to them.
  */
 export function VideoSidebar(props: {
   realm: RealmSession;
   media: MediaState;
   audio: SpatialAudio;
+  pinned: string | null;
+  onPin(id: string | null): void;
+  onWalkTo(id: string): void;
+  onCollapse(): void;
 }) {
-  const { realm, media, audio } = props;
-  const [pinned, setPinned] = useState<string | null>(null);
+  const { realm, media, audio, pinned } = props;
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const now = useNow(1000, perfNow);
   const selfId = realm.selfId ?? "";
@@ -68,9 +78,12 @@ export function VideoSidebar(props: {
     <aside className="sidebar" aria-label="People in this gathering">
       <h2>
         People <span className="count">{realm.participants.length}</span>
+        <button className="link collapse" onClick={props.onCollapse} aria-label="Hide people">
+          ⟩
+        </button>
       </h2>
       <ul>
-        {order.map((id) => {
+        {order.map((id, index) => {
           const p = byId.get(id);
           if (!p) return null;
           return (
@@ -78,19 +91,24 @@ export function VideoSidebar(props: {
               key={id}
               p={p}
               isSelf={id === selfId}
+              compact={index >= MAX_VIDEO_TILES}
               myRole={me?.role}
               pinned={pinned === id}
               speaking={media.speaking.has(id)}
               video={media.videos.get(id)}
               menuOpen={menuFor === id}
               onMenu={(open) => setMenuFor(open ? id : null)}
-              onPin={() => setPinned(pinned === id ? null : id)}
+              onPin={() => props.onPin(pinned === id ? null : id)}
+              onWalkTo={() => props.onWalkTo(id)}
               realm={realm}
               audio={audio}
             />
           );
         })}
       </ul>
+      {realm.participants.length > 1 && (
+        <p className="hint">Double-click someone to walk over to them.</p>
+      )}
     </aside>
   );
 }
@@ -98,6 +116,8 @@ export function VideoSidebar(props: {
 function Tile(props: {
   p: ParticipantView;
   isSelf: boolean;
+  /** Past the video cap: a name row without video. */
+  compact: boolean;
   myRole: ParticipantRole | undefined;
   pinned: boolean;
   speaking: boolean;
@@ -105,6 +125,7 @@ function Tile(props: {
   menuOpen: boolean;
   onMenu(open: boolean): void;
   onPin(): void;
+  onWalkTo(): void;
   realm: RealmSession;
   audio: SpatialAudio;
 }) {
@@ -112,17 +133,22 @@ function Tile(props: {
   const [volume, setVolume] = useState(() => audio.volumeOf(p.id));
   const moderate = !isSelf && myRole !== undefined && canModerate(myRole, p.role);
   const promote = !isSelf && myRole === "owner" && (p.role === "member" || p.role === "cohost");
+  const showVideo = !props.compact && props.video && (isSelf || p.cameraOn);
   const act = (fn: () => void) => () => {
     fn();
     props.onMenu(false);
   };
 
   return (
-    <li className={`tile${props.speaking ? " speaking" : ""}${props.pinned ? " pinned" : ""}`}>
+    <li
+      className={`tile${props.speaking ? " speaking" : ""}${props.pinned ? " pinned" : ""}${props.compact ? " compact" : ""}`}
+      onDoubleClick={isSelf ? undefined : props.onWalkTo}
+      title={isSelf ? undefined : `Double-click to walk over to ${p.name}`}
+    >
       <div className="tile-media">
         {/* Others' camera state comes from the realm, so a muted track shows their initial. */}
-        {props.video && (isSelf || p.cameraOn) ? (
-          <VideoView track={props.video} mirror={isSelf} />
+        {showVideo ? (
+          <VideoView track={props.video!} mirror={isSelf} />
         ) : (
           <div className="tile-face" style={{ background: colorFor(p.userId) }} aria-hidden>
             {p.name.slice(0, 1).toUpperCase()}
@@ -152,8 +178,13 @@ function Tile(props: {
       {props.menuOpen && (
         <div className="tile-menu" role="menu">
           <button role="menuitem" onClick={act(props.onPin)}>
-            {props.pinned ? "Unpin" : "Pin to top"}
+            {props.pinned ? "Unpin" : "Pin (show bigger)"}
           </button>
+          {!isSelf && (
+            <button role="menuitem" onClick={act(props.onWalkTo)}>
+              Walk over
+            </button>
+          )}
           {!isSelf && (
             <label className="volume">
               Volume
@@ -201,6 +232,18 @@ function Tile(props: {
           {promote && (
             <button role="menuitem" onClick={act(() => realm.setCoHost(p.id, p.role !== "cohost"))}>
               {p.role === "cohost" ? "Remove co-host" : "Make co-host"}
+            </button>
+          )}
+          {promote && (
+            <button
+              role="menuitem"
+              onClick={act(() => {
+                if (confirm(`Make ${p.name} the host? You'll become a co-host.`)) {
+                  realm.transferHost(p.id);
+                }
+              })}
+            >
+              Make host
             </button>
           )}
         </div>

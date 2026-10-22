@@ -11,7 +11,9 @@ import {
   RoomsResponse,
   SessionInfo,
   SessionsResponse,
+  VapidKeyResponse,
   type DevLoginRequest,
+  type PushSubscriptionRequest,
   type SaveGroupRequest,
   type StartSessionRequest,
 } from "@vcr/protocol";
@@ -96,6 +98,10 @@ export const api = {
     request(SessionInfo, `/sessions/${id}/invites`, post({ userIds })),
   createGuestLink: (id: string) =>
     request(GuestLinkResponse, `/sessions/${id}/guest-links`, post()),
+
+  vapidKey: () => request(VapidKeyResponse, "/push/vapid-key"),
+  savePushSubscription: (body: PushSubscriptionRequest) =>
+    request(NoContent, "/push/subscriptions", post(body)),
 
   guestLink: (token: string) => request(GuestLinkInfo, `/guest/${token}`),
   guestJoin: (token: string, displayName: string) =>

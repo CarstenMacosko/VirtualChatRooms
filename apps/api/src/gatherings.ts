@@ -3,6 +3,7 @@ import { RING_TIMEOUT_MS, type SessionInfo } from "@vcr/protocol";
 import type { Database } from "./db/client";
 import { rooms, sessionInvites, sessions, users } from "./db/schema";
 import type { LiveHub } from "./live";
+import type { PushNotifier } from "./push";
 
 /**
  * Live sessions ("gatherings"), their invites and ringing (PLAN.md § 4.4). Ring timers live in
@@ -14,8 +15,15 @@ export class Gatherings {
   constructor(
     private db: Database,
     private live: LiveHub,
+    private push: PushNotifier,
     private ringTimeoutMs = RING_TIMEOUT_MS,
   ) {}
+
+  /** In-app if they have the app open; otherwise a push notification to their devices. */
+  private deliver(userId: string, event: Parameters<PushNotifier["notify"]>[1]) {
+    if (this.live.isOnline(userId)) this.live.send(userId, event);
+    else void this.push.notify(userId, event).catch(() => {});
+  }
 
   /** Rings each invitee now; unanswered rings become "missed" after the timeout. */
   ring(
@@ -25,7 +33,7 @@ export class Gatherings {
     roomName: string,
   ) {
     for (const inviteeId of inviteeIds) {
-      this.live.send(inviteeId, { type: "ring", sessionId, from: host, roomName });
+      this.deliver(inviteeId, { type: "ring", sessionId, from: host, roomName });
       const key = `${sessionId}:${inviteeId}`;
       clearTimeout(this.ringTimers.get(key));
       this.ringTimers.set(
@@ -64,7 +72,7 @@ export class Gatherings {
     const key = `${sessionId}:${inviteeId}`;
     clearTimeout(this.ringTimers.get(key));
     this.ringTimers.delete(key);
-    this.live.send(inviteeId, { type: "ring-cancelled", sessionId });
+    this.deliver(inviteeId, { type: "ring-cancelled", sessionId });
 
     const [row] = await this.db
       .select({ hostId: sessions.hostId, displayName: users.displayName })
@@ -101,7 +109,7 @@ export class Gatherings {
       clearTimeout(this.ringTimers.get(key));
       this.ringTimers.delete(key);
       if (invite.status === "ringing") {
-        this.live.send(invite.inviteeId, { type: "ring-cancelled", sessionId });
+        this.deliver(invite.inviteeId, { type: "ring-cancelled", sessionId });
       }
     }
     await this.db

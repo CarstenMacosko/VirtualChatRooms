@@ -4,6 +4,7 @@ export * from "./device/deviceProfile";
 export * from "./input/InputSystem";
 export * from "./input/intents";
 export * from "./locomotion/CharacterController";
+export * from "./locomotion/autopilot";
 export * from "./locomotion/physics";
 export * from "./math";
 export * from "./media/interest";

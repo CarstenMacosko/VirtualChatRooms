@@ -68,7 +68,8 @@ export class MediaSession {
         noiseSuppression: true,
         autoGainControl: true,
       },
-      videoCaptureDefaults: { resolution: VideoPresets.h360.resolution },
+      // Capture at 720p for the pinned (large) view; small tiles take the 180p/360p layers.
+      videoCaptureDefaults: { resolution: VideoPresets.h720.resolution },
       publishDefaults: {
         simulcast: true,
         videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],

@@ -179,6 +179,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
       setLocked: (value: boolean) => send(RealmMessage.setLocked, { locked: value }),
       setCoHost: (target: string, cohost: boolean) =>
         send(RealmMessage.setCoHost, { target, cohost }),
+      transferHost: (target: string) => send(RealmMessage.transferHost, { target }),
       endSession: () => send(RealmMessage.endSession, {}),
       /** Try again after a "locked" refusal. */
       retry: () => {

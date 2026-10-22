@@ -3,10 +3,11 @@ import type { Vec3 } from "@vcr/engine";
 /**
  * The spatial audio graph (PLAN.md § 4.5):
  *
- *   per person: MediaStreamSource → volume (gain) → HRTF panner ─┐
- *                                                                ├→ conversation bus → master → compressor → speakers
- *   (Phase 5: side conversations get a second, quieter "background" bus with a lowpass, whose
- *    level is the tunable "how much of the room you hear" slider.)
+ *   per person: MediaStreamSource → volume (gain) → HRTF panner ─┬→ conversation bus ─────────┐
+ *                                                                └→ background bus → lowpass ─┴→ master → compressor → speakers
+ *
+ * Everyone routes to the conversation bus today. Side conversations will route people outside
+ * your group to the background bus, whose level is the "how much of the room you hear" slider.
  *
  * The listener follows the camera and each panner follows that person's avatar head, both
  * updated every frame by the 3D world.
@@ -15,17 +16,25 @@ import type { Vec3 } from "@vcr/engine";
 /** Avatar head height above the feet, where voices come from. */
 const VOICE_HEIGHT = 1.55;
 
+export type AudioBus = "conversation" | "background";
+
+/** Crossfade time when someone moves between buses. */
+const BUS_FADE_S = 0.3;
+
 interface Source {
   element: HTMLAudioElement;
   node: MediaStreamAudioSourceNode;
   volume: GainNode;
   panner: PannerNode;
+  /** One send per bus; routing crossfades between them. */
+  sends: Record<AudioBus, GainNode>;
 }
 
 export class SpatialAudio {
   readonly context: AudioContext;
   private master: GainNode;
-  private bus: GainNode;
+  private buses: Record<AudioBus, GainNode>;
+  private routes = new Map<string, AudioBus>();
   private sources = new Map<string, Source>();
   /** Last known feet position per person, also used to pick who's audible. */
   readonly positions = new Map<string, Vec3>();
@@ -38,8 +47,15 @@ export class SpatialAudio {
     compressor.threshold.value = -18;
     compressor.ratio.value = 3;
     this.master = this.context.createGain();
-    this.bus = this.context.createGain();
-    this.bus.connect(this.master).connect(compressor).connect(this.context.destination);
+    this.master.connect(compressor).connect(this.context.destination);
+    const muffle = new BiquadFilterNode(this.context, { type: "lowpass", frequency: 1800 });
+    muffle.connect(this.master);
+    this.buses = {
+      conversation: this.context.createGain(),
+      background: new GainNode(this.context, { gain: 0.35 }),
+    };
+    this.buses.conversation.connect(this.master);
+    this.buses.background.connect(muffle);
   }
 
   /** Must be called from a user gesture (the Join button) for audio to start in most browsers. */
@@ -68,8 +84,16 @@ export class SpatialAudio {
       rolloffFactor: 1.5,
       maxDistance: 25,
     });
-    node.connect(volume).connect(panner).connect(this.bus);
-    this.sources.set(id, { element, node, volume, panner });
+    const bus = this.routes.get(id) ?? "conversation";
+    const sends = {
+      conversation: new GainNode(this.context, { gain: bus === "conversation" ? 1 : 0 }),
+      background: new GainNode(this.context, { gain: bus === "background" ? 1 : 0 }),
+    };
+    node.connect(volume).connect(panner);
+    for (const name of ["conversation", "background"] as const) {
+      panner.connect(sends[name]).connect(this.buses[name]);
+    }
+    this.sources.set(id, { element, node, volume, panner, sends });
     const at = this.positions.get(id);
     if (at) this.placeSource(this.sources.get(id)!, at);
   }
@@ -80,6 +104,8 @@ export class SpatialAudio {
     source.node.disconnect();
     source.volume.disconnect();
     source.panner.disconnect();
+    source.sends.conversation.disconnect();
+    source.sends.background.disconnect();
     source.element.srcObject = null;
     this.sources.delete(id);
   }
@@ -93,6 +119,22 @@ export class SpatialAudio {
 
   volumeOf(id: string) {
     return this.volumes.get(id) ?? 1;
+  }
+
+  /** Moves someone between the conversation and background buses (side conversations). */
+  route(id: string, bus: AudioBus) {
+    this.routes.set(id, bus);
+    const source = this.sources.get(id);
+    if (!source) return;
+    const t = this.context.currentTime;
+    for (const name of ["conversation", "background"] as const) {
+      source.sends[name].gain.setTargetAtTime(name === bus ? 1 : 0, t, BUS_FADE_S / 3);
+    }
+  }
+
+  /** The "background voices" slider, 0–1: how much of the rest of the room you hear. */
+  setBackgroundLevel(value: number) {
+    this.buses.background.gain.setTargetAtTime(value, this.context.currentTime, 0.05);
   }
 
   setMasterVolume(value: number) {
@@ -131,6 +173,7 @@ export class SpatialAudio {
   forget(id: string) {
     this.removeTrack(id);
     this.positions.delete(id);
+    this.routes.delete(id);
   }
 
   dispose() {

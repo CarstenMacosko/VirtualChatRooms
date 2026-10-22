@@ -8,6 +8,7 @@ import { SignIn } from "./components/SignIn";
 import { api } from "./lib/api";
 import { useAuth } from "./lib/auth";
 import { useLiveEvents } from "./lib/live";
+import { syncPush } from "./lib/push";
 import { navigate, type Route, useRoute } from "./lib/router";
 
 export function App() {
@@ -21,6 +22,11 @@ export function App() {
 
 function SignedIn({ auth, route }: { auth: DevLoginResponse; route: Route }) {
   useLiveEvents(auth.token);
+  // Keep this browser's push subscription tied to whoever is signed in (this component remounts
+  // per sign-in, keyed by token).
+  useEffect(() => {
+    syncPush().catch(() => {});
+  }, []);
   return (
     <>
       {route.name === "session" ? (

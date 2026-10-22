@@ -6,14 +6,17 @@ import { InviteStatus } from "./sessions";
  * calls, answers to your calls, and contact changes. Web Push covers the case where the app is
  * closed.
  */
+const RingEvent = z.object({
+  type: z.literal("ring"),
+  sessionId: z.string(),
+  from: z.object({ id: z.string(), displayName: z.string() }),
+  roomName: z.string(),
+});
+const RingCancelledEvent = z.object({ type: z.literal("ring-cancelled"), sessionId: z.string() });
+
 export const LiveEvent = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("ring"),
-    sessionId: z.string(),
-    from: z.object({ id: z.string(), displayName: z.string() }),
-    roomName: z.string(),
-  }),
-  z.object({ type: z.literal("ring-cancelled"), sessionId: z.string() }),
+  RingEvent,
+  RingCancelledEvent,
   z.object({
     type: z.literal("invite-response"),
     sessionId: z.string(),
@@ -33,3 +36,8 @@ export const PushSubscriptionRequest = z.object({
 export type PushSubscriptionRequest = z.infer<typeof PushSubscriptionRequest>;
 
 export const VapidKeyResponse = z.object({ publicKey: z.string().nullable() });
+export type VapidKeyResponse = z.infer<typeof VapidKeyResponse>;
+
+/** What a Web Push message carries to the service worker: a ring, or that it stopped ringing. */
+export const PushPayload = z.discriminatedUnion("type", [RingEvent, RingCancelledEvent]);
+export type PushPayload = z.infer<typeof PushPayload>;

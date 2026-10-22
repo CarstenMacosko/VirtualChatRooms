@@ -289,11 +289,22 @@ b.room.send(RealmMessage.hostRemove, { target: guest.room.sessionId });
 const guestCode = await withTimeout(guest.left, 5000, "guest removal");
 check("co-host can remove a guest", guestCode === RealmCloseCode.removed);
 
-// --- Ending ---
+// --- Handing over and ending ---
 
-a.room.send(RealmMessage.endSession, {});
-const bobCode = await withTimeout(b.left, 5000, "session end");
-check("ending the gathering disconnects everyone", bobCode === RealmCloseCode.sessionEnded);
+a.room.send(RealmMessage.transferHost, { target: b.room.sessionId });
+const handedOver = await waitForState(
+  a.room,
+  (s) => s.participants[b.room.sessionId]?.role === "owner",
+  "transfer host",
+);
+check(
+  "owner can hand the host role over and becomes a co-host",
+  handedOver.participants[a.room.sessionId]?.role === "cohost",
+);
+
+b.room.send(RealmMessage.endSession, {});
+const aliceCode = await withTimeout(a.left, 5000, "session end");
+check("the new host can end the gathering for everyone", aliceCode === RealmCloseCode.sessionEnded);
 let status = "live";
 for (let i = 0; i < 20 && status === "live"; i++) {
   await new Promise((r) => setTimeout(r, 200));

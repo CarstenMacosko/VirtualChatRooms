@@ -13,6 +13,10 @@ const Env = z.object({
   PGLITE_DIR: z.string().default(fileURLToPath(new URL("../.data/pglite", import.meta.url))),
   SESSION_TOKEN_SECRET: z.string().min(32),
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
+  /** Web Push (calls while the app is closed). Empty disables push; `pnpm dev` generates a pair. */
+  VAPID_PUBLIC_KEY: z.string().default(""),
+  VAPID_PRIVATE_KEY: z.string().default(""),
+  VAPID_SUBJECT: z.string().default("mailto:dev@localhost"),
 });
 export type Env = z.infer<typeof Env>;
 

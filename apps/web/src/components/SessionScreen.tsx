@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { EmoteId, type JoinSessionResponse } from "@vcr/protocol";
 import { readDeviceProfile } from "../lib/device";
 import { useNow } from "../lib/hooks";
@@ -8,7 +8,9 @@ import { useMedia } from "../media/useMedia";
 import { EMOTE_GLYPHS } from "./emotes";
 import { InvitePanel } from "./InvitePanel";
 import { type JoinChoice, PreJoin } from "./PreJoin";
-import { VideoSidebar } from "./VideoSidebar";
+import { colorFor } from "./emotes";
+import { VideoSidebar, VideoView } from "./VideoSidebar";
+import type { Autopilot } from "../world/World";
 
 // Three.js, Spark, Rapier and three-vrm are large; load them only when entering a room.
 const World = lazy(() => import("../world/World"));
@@ -61,6 +63,7 @@ const NOTICE_COPY = {
   cameraOffByHost: "A host turned off your camera.",
   promoted: "You're now a co-host.",
   demoted: "You're no longer a co-host.",
+  nowHost: "You're the host now.",
 } as const;
 
 function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: SpatialAudio }) {
@@ -69,11 +72,19 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   const media = useMedia(realm, audio, props.choice);
   const [profile] = useState(readDeviceProfile);
   const [inviting, setInviting] = useState(false);
+  const [pinned, setPinned] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const autopilotRef = useRef<Autopilot>({ targetId: null });
   const now = useNow(250);
 
   const me = realm.participants.find((p) => p.id === realm.selfId);
   const isOwner = me?.role === "owner";
   const isHost = isOwner || me?.role === "cohost";
+  // Inviting goes through the API, where the room owner stays the session's host even after
+  // handing the in-room host role to someone else.
+  const canInvite = realm.joinInfo?.role === "owner";
+  const pinnedPerson = realm.participants.find((p) => p.id === pinned);
+  const pinnedVideo = pinned ? media.videos.get(pinned) : undefined;
   const connected = realm.status === "connected";
   const latestNotice = realm.notices.at(-1);
   const showNotice = latestNotice && now - latestNotice.at < 5000;
@@ -118,7 +129,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
         <span className="muted">{props.displayName}</span>
       </header>
 
-      <main className="stage">
+      <main className={`stage${sidebarOpen ? "" : " no-sidebar"}`}>
         <div className="scene">
           <Suspense fallback={<div className="world-loading">Loading room…</div>}>
             <World
@@ -128,10 +139,31 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
               now={now}
               poseHub={realm.poseHub}
               audio={audio}
+              autopilotRef={autopilotRef}
               profile={profile}
               debug={debug}
             />
           </Suspense>
+          {pinnedPerson && (
+            <div className="pinned-view" onDoubleClick={() => setPinned(null)}>
+              {pinnedVideo && (pinnedPerson.cameraOn || pinnedPerson.id === realm.selfId) ? (
+                <VideoView track={pinnedVideo} mirror={pinnedPerson.id === realm.selfId} />
+              ) : (
+                <div className="tile-face" style={{ background: colorFor(pinnedPerson.userId) }}>
+                  {pinnedPerson.name.slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <span className="pinned-name">{pinnedPerson.name}</span>
+              <button className="tile-more" aria-label="Unpin" onClick={() => setPinned(null)}>
+                ✕
+              </button>
+            </div>
+          )}
+          {!sidebarOpen && (
+            <button className="sidebar-open secondary" onClick={() => setSidebarOpen(true)}>
+              ⟨ People {realm.participants.length}
+            </button>
+          )}
           {showNotice && (
             <p className="toast" role="status">
               {NOTICE_COPY[latestNotice.kind]}
@@ -143,7 +175,19 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
             </p>
           )}
         </div>
-        <VideoSidebar realm={realm} media={media} audio={audio} />
+        {sidebarOpen && (
+          <VideoSidebar
+            realm={realm}
+            media={media}
+            audio={audio}
+            pinned={pinned}
+            onPin={setPinned}
+            onWalkTo={(id) => {
+              autopilotRef.current.targetId = id;
+            }}
+            onCollapse={() => setSidebarOpen(false)}
+          />
+        )}
       </main>
 
       <footer className="bottombar" role="toolbar" aria-label="Call controls">
@@ -176,7 +220,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
           ))}
         </div>
         <span className="spacer" />
-        {isOwner && (
+        {canInvite && (
           <button className="secondary" onClick={() => setInviting(true)}>
             Invite
           </button>

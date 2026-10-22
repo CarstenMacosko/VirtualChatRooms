@@ -10,6 +10,8 @@ import {
   JoinSessionResponse,
   MeResponse,
   PublicUser,
+  PushPayload,
+  VapidKeyResponse,
   REALM_ISSUER,
   REALM_TICKET_AUDIENCE,
   RealmTicketClaims,
@@ -514,5 +516,83 @@ describe("live events", () => {
 
     hostStream.close();
     calleeStream.close();
+  });
+});
+
+describe("web push", () => {
+  it("pushes rings to people without the app open, and withdraws them", async () => {
+    const sent: { endpoint: string; payload: PushPayload }[] = [];
+    let failWith: number | null = null;
+    const pushApp = await buildApp({
+      db: database.db,
+      dbKind: database.kind,
+      env: { ...env, VAPID_PUBLIC_KEY: "test-public", VAPID_PRIVATE_KEY: "test-private" },
+      pushSender: async (sub, payload) => {
+        if (failWith) throw Object.assign(new Error("gone"), { statusCode: failWith });
+        sent.push({ endpoint: sub.endpoint, payload: PushPayload.parse(JSON.parse(payload)) });
+      },
+    });
+    const as = async (name: string) => {
+      const { token, user } = DevLoginResponse.parse(
+        (
+          await pushApp.inject({
+            method: "POST",
+            url: "/auth/dev-login",
+            payload: { displayName: name, birthDate: "1980-01-01" },
+          })
+        ).json(),
+      );
+      const call = (method: Method, url: string, payload?: object) =>
+        pushApp.inject({ method, url, payload, headers: { authorization: `Bearer ${token}` } });
+      const { friendCode } = MeResponse.parse((await call("GET", "/me")).json());
+      return { user, friendCode, call };
+    };
+    const host = await as("Push Host");
+    const callee = await as("Push Callee");
+    await host.call("POST", "/contacts", { friendCode: callee.friendCode });
+    await callee.call("POST", `/contacts/${host.user.id}/accept`);
+
+    const key = VapidKeyResponse.parse((await pushApp.inject({ url: "/push/vapid-key" })).json());
+    expect(key.publicKey).toBe("test-public");
+    const endpoint = "https://push.example/abc";
+    const subscribe = await callee.call("POST", "/push/subscriptions", {
+      endpoint,
+      keys: { p256dh: "p", auth: "a" },
+    });
+    expect(subscribe.statusCode).toBe(204);
+
+    const { rooms } = RoomsResponse.parse((await host.call("GET", "/rooms")).json());
+    const { id } = SessionInfo.parse(
+      (await host.call("POST", "/sessions", { roomId: rooms[0]!.id, inviteAll: true })).json(),
+    );
+    await sleep(50);
+    expect(sent).toEqual([
+      {
+        endpoint,
+        payload: {
+          type: "ring",
+          sessionId: id,
+          from: { id: host.user.id, displayName: "Push Host" },
+          roomName: "My living room",
+        },
+      },
+    ]);
+
+    await callee.call("POST", `/sessions/${id}/decline`);
+    await sleep(50);
+    expect(sent.at(-1)?.payload).toEqual({ type: "ring-cancelled", sessionId: id });
+
+    // A subscription the push service says is gone gets deleted.
+    failWith = 410;
+    await host.call("POST", `/sessions/${id}/invites`, { userIds: [callee.user.id] });
+    await sleep(50);
+    const rows = await database.db.query.pushSubscriptions.findMany();
+    expect(rows.some((r) => r.endpoint === endpoint)).toBe(false);
+    await pushApp.close();
+  });
+
+  it("reports push as off without VAPID keys", async () => {
+    const key = VapidKeyResponse.parse((await app.inject({ url: "/push/vapid-key" })).json());
+    expect(key.publicKey).toBeNull();
   });
 });

@@ -9,6 +9,7 @@ import type {
 import { api, ApiRequestError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLive } from "../lib/live";
+import { enablePush, pushSupported } from "../lib/push";
 import { navigate } from "../lib/router";
 
 const errorText = (err: unknown) =>
@@ -446,20 +447,26 @@ function Groups(props: { contacts: ContactsResponse | null; onChange(c: Contacts
   );
 }
 
-/** Browser notifications for calls while this tab is in the background. */
+/** Calls as system notifications: while this tab is in the background, or the app is closed. */
 function CallAlerts() {
-  const supported = typeof Notification !== "undefined";
+  const supported = pushSupported();
   const [permission, setPermission] = useState(supported ? Notification.permission : "denied");
-  if (!supported || permission !== "default") return null;
+  if (!supported || permission === "granted") return null;
   return (
     <div className="callout">
-      <p>Get notified when someone calls while this tab is in the background.</p>
-      <button
-        className="secondary"
-        onClick={() => void Notification.requestPermission().then(setPermission)}
-      >
-        Turn on call alerts
-      </button>
+      {permission === "denied" ? (
+        <p>
+          Call alerts are blocked for this site. Allow notifications in your browser's site settings
+          to get calls when the app is closed.
+        </p>
+      ) : (
+        <>
+          <p>Get calls even when this app is closed.</p>
+          <button className="secondary" onClick={() => void enablePush().then(setPermission)}>
+            Turn on call alerts
+          </button>
+        </>
+      )}
     </div>
   );
 }

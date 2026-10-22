@@ -15,6 +15,13 @@
       "when": 1792673619979,
       "tag": "0001_social_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792680826850,
+      "tag": "0002_push_subscriptions",
+      "breakpoints": true
     }
   ]
 }

@@ -52,6 +52,8 @@ export const RealmMessage = {
   setLocked: "setLocked",
   /** Owner only. */
   setCoHost: "setCoHost",
+  /** Owner only: hand the host role to someone else; you become a co-host. */
+  transferHost: "transferHost",
   /** Owner only: end the gathering for everyone. */
   endSession: "endSession",
 } as const;
@@ -70,10 +72,17 @@ export const ClientMessages = {
   [RealmMessage.hostRemove]: Target,
   [RealmMessage.setLocked]: z.object({ locked: z.boolean() }),
   [RealmMessage.setCoHost]: Target.extend({ cohost: z.boolean() }),
+  [RealmMessage.transferHost]: Target,
   [RealmMessage.endSession]: z.object({}),
 } as const;
 
-export const NoticeKind = z.enum(["mutedByHost", "cameraOffByHost", "promoted", "demoted"]);
+export const NoticeKind = z.enum([
+  "mutedByHost",
+  "cameraOffByHost",
+  "promoted",
+  "demoted",
+  "nowHost",
+]);
 export type NoticeKind = z.infer<typeof NoticeKind>;
 
 export const ServerMessages = {

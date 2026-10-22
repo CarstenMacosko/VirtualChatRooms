@@ -2,6 +2,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Vector3 } from "three";
 import {
+  autopilotStep,
   CameraRig,
   CharacterController,
   type DeviceProfile,
@@ -25,6 +26,10 @@ import { AvatarInstance, PLACEHOLDER_AVATAR_URL } from "./AvatarInstance";
 import { RoomSplats } from "./RoomSplats";
 import { TouchControls } from "./TouchControls";
 
+export interface Autopilot {
+  targetId: string | null;
+}
+
 /** Label anchors above each avatar's head, keyed by realm session id. */
 type Anchors = Map<string, Vec3>;
 type LabelMap = Map<string, HTMLDivElement>;
@@ -40,6 +45,8 @@ export interface WorldProps {
   poseHub: PoseHub;
   /** Voices follow avatars; the listener follows the camera. */
   audio: SpatialAudio | null;
+  /** Set `targetId` to walk your avatar over to that person; moving yourself cancels it. */
+  autopilotRef: RefObject<Autopilot>;
   profile: DeviceProfile;
   debug: boolean;
 }
@@ -105,6 +112,7 @@ export default function World(props: WorldProps) {
             input={input}
             poseHub={poseHub}
             audio={props.audio}
+            autopilotRef={props.autopilotRef}
             selfId={props.selfId}
             participants={props.participants}
             anchors={anchors}
@@ -213,6 +221,7 @@ function Simulation(props: {
   input: InputSystem;
   poseHub: PoseHub;
   audio: SpatialAudio | null;
+  autopilotRef: RefObject<Autopilot>;
   /** Null while reconnecting to the realm; the room keeps running locally meanwhile. */
   selfId: string | null;
   participants: ParticipantView[];
@@ -221,7 +230,7 @@ function Simulation(props: {
   stats: RefObject<HTMLPreElement | null> | null;
   splatCount: number;
 }) {
-  const { sim, input, poseHub, audio, selfId, anchors, labels } = props;
+  const { sim, input, poseHub, audio, autopilotRef, selfId, anchors, labels } = props;
   const { physics } = sim;
   const size = useThree((s) => s.size);
 
@@ -275,10 +284,30 @@ function Simulation(props: {
     const firstPerson = rig.mode === "first";
     const fwd = forwardFromYaw(rig.yaw);
     const right = rightFromYaw(rig.yaw);
-    const move = {
+    let move = {
       x: fwd.x * intents.move.y + right.x * intents.move.x,
       z: fwd.z * intents.move.y + right.z * intents.move.x,
     };
+    let run = intents.run;
+
+    // "Walk over to them" (double-clicked a tile), until you steer yourself or arrive.
+    const targetId = autopilotRef.current.targetId;
+    if (targetId) {
+      const target = poseHub.sample(targetId, now);
+      const steering = Math.hypot(intents.move.x, intents.move.y) > 0.1 || intents.jump;
+      if (!target || steering) {
+        autopilotRef.current.targetId = null;
+      } else {
+        const p = sim.character.current.position;
+        const step = autopilotStep(
+          { x: p[0], z: p[2] },
+          { x: target.position[0], z: target.position[2] },
+        );
+        if (step.arrived) autopilotRef.current.targetId = null;
+        move = step.move;
+        run = step.run;
+      }
+    }
 
     // 2. Fixed-step physics; render interpolates between the last two steps.
     l.accumulator += dt;
@@ -287,7 +316,7 @@ function Simulation(props: {
       l.previous = [...character.current.position];
       character.step(PHYSICS_DT, {
         move,
-        run: intents.run,
+        run,
         jump: l.pendingJump,
         faceYaw: firstPerson ? rig.yaw : undefined,
       });
