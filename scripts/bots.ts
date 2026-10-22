@@ -1,30 +1,52 @@
 /**
  * Load/feel test: N bots join a live gathering as guests and wander the sample room, sending poses
  * at the same rates a real client does (through the realm relay, since bots don't use LiveKit).
- * Start a gathering in the web app, click Invite → Copy guest link, then:
+ * Start a gathering in the web app, then:
  *
- *   pnpm bots 10 <guest link>       # 10 bots for 2 minutes
- *   pnpm bots 24 <guest link> 300   # 24 bots for 5 minutes (25 people with you)
+ *   pnpm bots 10                    # 10 bots into the newest live gathering, for 2 minutes
+ *   pnpm bots 24 300                # 24 bots for 5 minutes (25 people with you)
+ *   pnpm bots 10 <guest link> 300   # a specific gathering (Invite → Copy guest link)
  */
 import { Client, type Room } from "@colyseus/sdk";
 import { PoseSender, SAMPLE_ROOM } from "@vcr/engine";
 import {
   GuestLinkInfo,
+  GuestLinkResponse,
   JoinSessionResponse,
   LocoState,
   REALM_ROOM_NAME,
   RealmMessage,
 } from "@vcr/protocol";
 
-const count = Number(process.argv[2] ?? 10);
-// Accepts the whole link (http://localhost:5173/join/<token>) or just the token.
-const guestToken = process.argv[3]?.split("/").filter(Boolean).at(-1);
-const seconds = Number(process.argv[4] ?? 120);
-if (!guestToken) {
-  console.error("Usage: pnpm bots <count> <guest link> [seconds]");
+const API = process.env.BOTS_API_URL ?? "http://127.0.0.1:3001";
+const args = process.argv.slice(2);
+const count = Number(args.shift() ?? 10);
+// An optional guest link (the whole URL or just its token); seconds is the last number.
+const linkArg = args.find((a) => !/^\d+$/.test(a));
+const seconds = Number(args.find((a) => /^\d+$/.test(a)) ?? 120);
+if (!Number.isInteger(count) || count < 1) {
+  console.error("Usage: pnpm bots [count] [guest link] [seconds]");
   process.exit(1);
 }
-const API = process.env.BOTS_API_URL ?? "http://127.0.0.1:3001";
+
+const fail = (message: string): never => {
+  console.error(message);
+  process.exit(1);
+};
+const reach = (path: string, init?: RequestInit) =>
+  fetch(API + path, init).catch(() =>
+    fail(`Can't reach the API at ${API}. Is \`pnpm dev\` running?`),
+  );
+
+let guestToken = linkArg?.split("/").filter(Boolean).at(-1);
+if (!guestToken) {
+  // No link given: ask the dev API for one into the newest live gathering.
+  const res = await reach("/dev/latest-guest-link", { method: "POST" });
+  if (res.status === 404)
+    fail("No live gathering. Start one in the app (Start and ring), then rerun.");
+  if (!res.ok) fail(`Couldn't get a guest link (${res.status}): ${await res.text()}`);
+  guestToken = GuestLinkResponse.parse(await res.json()).token;
+}
 const REALM = process.env.BOTS_REALM_URL ?? "ws://127.0.0.1:2567";
 
 // Open floor areas of the sample room (avoiding furniture), as [minX, maxX, minZ, maxZ].
@@ -85,21 +107,16 @@ async function startBot(i: number): Promise<Bot> {
 }
 
 // Check the link once up front, so a stale one gets a plain explanation instead of a stack trace.
-const linkRes = await fetch(`${API}/guest/${guestToken}`).catch(() => null);
-if (!linkRes) {
-  console.error(`Can't reach the API at ${API}. Is \`pnpm dev\` running?`);
-  process.exit(1);
-}
+const linkRes = await reach(`/guest/${guestToken}`);
 const link = linkRes.ok ? GuestLinkInfo.parse(await linkRes.json()) : null;
 if (!link?.live) {
-  console.error(
+  fail(
     link
-      ? `That gathering has ended. Start a new one, then use Invite → Copy guest link.`
-      : `That guest link doesn't exist or has expired. In a live gathering, use Invite → Copy guest link.`,
+      ? "That gathering has ended. Start a new one, then rerun."
+      : "That guest link doesn't exist or has expired. Leave it off to use your newest gathering.",
   );
-  process.exit(1);
 }
-console.log(`Joining ${link.hostName}'s gathering in ${link.roomName}…`);
+console.log(`Joining ${link!.hostName}'s gathering in ${link!.roomName}…`);
 
 const bots = await Promise.all(Array.from({ length: count }, (_, i) => startBot(i)));
 console.log(`${bots.length} bots walking around for ${seconds}s`);

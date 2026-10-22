@@ -130,11 +130,15 @@ Start the web client, API, realm server and LiveKit together. The first run crea
 pnpm dev
 ```
 
-Then open http://localhost:5173 and sign in with any name and an adult birth date. To try calling, sign in as a second person in a private window (or at http://gran.localhost:5173, which keeps a separate sign-in). Add each other by friend code (top right), then click **Start and ring**. The other window rings; answer it, check your mic and camera, and join. In the gathering, **Invite → Copy guest link** gives a link for someone without an account. You can also fill the room with walking bots from that link:
+Then open http://localhost:5173 and sign in with any name and an adult birth date. To try calling, sign in as a second person in a private window (or at http://gran.localhost:5173, which keeps a separate sign-in). Add each other by friend code (top right), then click **Start and ring**. The other window rings; answer it, check your mic and camera, and join. In the gathering, **Invite → Copy guest link** gives a link for someone without an account.
+
+To fill your gathering with walking bots, start one in the app and run this. With no link, the bots join the most recently started live gathering:
 
 ```bash
-pnpm bots 10 http://localhost:5173/join/<token>
+pnpm bots 10
 ```
+
+Add a number of seconds to keep them longer (`pnpm bots 24 300`), or a copied guest link to pick a specific gathering.
 
 | Control              | Desktop                                             | Phone / tablet                |
 | -------------------- | --------------------------------------------------- | ----------------------------- |

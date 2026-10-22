@@ -356,6 +356,26 @@ describe("sessions", () => {
     expect((await app.inject({ url: "/guest/not-a-real-token" })).statusCode).toBe(404);
   });
 
+  it("gives dev tools a guest link into the newest live gathering", async () => {
+    const { host, room } = await hostWithFriends("Newest");
+    const { id } = SessionInfo.parse(
+      (await host.call("POST", "/sessions", { roomId: room.id })).json(),
+    );
+    const res = await app.inject({ method: "POST", url: "/dev/latest-guest-link" });
+    expect(res.statusCode).toBe(201);
+    const link = GuestLinkResponse.parse(res.json());
+    const joined = JoinSessionResponse.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/guest/${link.token}/join`,
+          payload: { displayName: "Bot" },
+        })
+      ).json(),
+    );
+    expect(joined.sessionId).toBe(id);
+  });
+
   it("ends sessions when the realm reports it, and only the realm may", async () => {
     const { host, friends, room } = await hostWithFriends("Ender");
     const { id } = SessionInfo.parse(
@@ -404,6 +424,27 @@ describe("sessions", () => {
 });
 
 describe("live events", () => {
+  it("shuts down promptly while event streams are open", async () => {
+    const own = await buildApp({ db: database.db, dbKind: database.kind, env });
+    const address = await own.listen({ host: "127.0.0.1", port: 0 });
+    const { token } = DevLoginResponse.parse(
+      (
+        await own.inject({
+          method: "POST",
+          url: "/auth/dev-login",
+          payload: { displayName: "Still Watching", birthDate: "1990-01-01" },
+        })
+      ).json(),
+    );
+    const res = await fetch(`${address}/events`, { headers: { authorization: `Bearer ${token}` } });
+    expect(res.ok).toBe(true);
+    // Before the fix, close() waited on this stream forever.
+    await expect(
+      Promise.race([own.close().then(() => "closed"), sleep(2000).then(() => "hung")]),
+    ).resolves.toBe("closed");
+    await res.body?.cancel().catch(() => {});
+  });
+
   it("streams rings to the invitee and answers to the host", async () => {
     const host = await person("Caller");
     const callee = await person("Callee");

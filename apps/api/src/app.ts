@@ -47,7 +47,9 @@ export async function buildApp(ctx: AppContext) {
       .catch((err: unknown) => app.log.warn({ err }, "presence fan-out failed"));
   });
 
-  app.addHook("onClose", async () => {
+  // preClose, not onClose: Fastify waits for open connections before onClose runs, and the
+  // long-lived /events streams would keep it waiting forever (e.g. hanging a dev restart).
+  app.addHook("preClose", async () => {
     live.closeAll();
     gatherings.dispose();
   });
