@@ -1,0 +1,32 @@
+{
+  "name": "virtual-chat-rooms",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "node scripts/ensure-env.mjs && turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck && tsc -p tsconfig.json",
+    "test": "turbo run test",
+    "lint": "oxlint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "smoke": "tsx scripts/smoke.ts",
+    "db:generate": "pnpm --filter @vcr/api db:generate",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down"
+  },
+  "devDependencies": {
+    "@colyseus/sdk": "0.18.5",
+    "@types/node": "24.19.2",
+    "@vcr/protocol": "workspace:*",
+    "oxlint": "1.89.0",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
+    "turbo": "2.11.10",
+    "typescript": "6.0.3"
+  }
+}

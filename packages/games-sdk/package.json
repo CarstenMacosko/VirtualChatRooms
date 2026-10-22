@@ -1,0 +1,16 @@
+{
+  "name": "@vcr/games-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mini-game plugin contract. Defined in Phase 0, implemented after the MVP.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}

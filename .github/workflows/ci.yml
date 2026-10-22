@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Smoke test against running servers
+        run: |
+          cp .env.example .env
+          pnpm --filter @vcr/api start &
+          pnpm --filter @vcr/realm start &
+          npx --yes wait-on@9.5.1 -t 60000 http-get://127.0.0.1:3001/health tcp:127.0.0.1:2567
+          pnpm smoke

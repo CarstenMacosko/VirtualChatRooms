@@ -1,0 +1,5 @@
+pnpm-lock.yaml
+dist/
+.turbo/
+apps/api/.data/
+apps/api/drizzle/meta/
