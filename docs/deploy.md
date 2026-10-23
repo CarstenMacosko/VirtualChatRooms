@@ -108,3 +108,4 @@ With Clerk on, invite links ask people to sign in with Clerk first, then connect
 - **Database:** embedded PGlite at `/data/pglite` on the Fly volume (one machine only). For managed Postgres (Neon), set the `DATABASE_URL` secret.
 - **Room scans:** `/data/storage` on the same volume. For Cloudflare R2, set `STORAGE_DRIVER=s3` and the `S3_*` secrets (see `.env.example`).
 - **Why one machine:** live events, ringing and the realm keep their state in memory. Running two needs Redis (PLAN.md § 8).
+- **Why 2 GB:** the API with embedded Postgres (PGlite) uses about 700 MB, the realm about 150 MB, and creating the database on a fresh volume briefly needs about 1.2 GB. On 1 GB the API is killed for running out of memory. Pointing `DATABASE_URL` at a hosted Postgres (Neon, Fly Postgres) removes most of that.

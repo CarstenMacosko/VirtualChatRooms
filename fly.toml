@@ -29,7 +29,11 @@ primary_region = "iad"
   source = "vcr_data"
   destination = "/data"
 
+# The API (embedded Postgres) settles near 700 MB and the realm near 150 MB; creating the database on a
+# fresh volume briefly needs ~1.2 GB. 1 GB machines get killed for running out of memory.
+swap_size_mb = 1024
+
 [[vm]]
-  memory = "1gb"
+  memory = "2gb"
   cpu_kind = "shared"
   cpus = 1
