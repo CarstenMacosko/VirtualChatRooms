@@ -67,6 +67,11 @@ export const RealmMessage = {
   chat: "chat",
   /** Client → server: raise or lower your hand. */
   raiseHand: "raiseHand",
+  /**
+   * The host moved the gathering to another room (after the API agreed). Host → server; server →
+   * everyone: rejoin to get the new room's assets.
+   */
+  roomChanged: "roomChanged",
 } as const;
 
 export const MAX_CHAT_LENGTH = 500;
@@ -90,6 +95,7 @@ export const ClientMessages = {
   [RealmMessage.endSession]: z.object({}),
   [RealmMessage.chat]: z.object({ text: z.string().trim().min(1).max(MAX_CHAT_LENGTH) }),
   [RealmMessage.raiseHand]: z.object({ raised: z.boolean() }),
+  [RealmMessage.roomChanged]: z.object({}),
 } as const;
 
 export const NoticeKind = z.enum([
@@ -116,6 +122,8 @@ export const ServerMessages = {
   }),
 } as const;
 export type ChatBroadcast = z.infer<(typeof ServerMessages)["chat"]>;
+export const RoomChangedBroadcast = z.object({ by: z.string() });
+export type RoomChangedBroadcast = z.infer<typeof RoomChangedBroadcast>;
 export type EmoteBroadcast = z.infer<(typeof ServerMessages)["emote"]>;
 export type MediaGrant = z.infer<(typeof ServerMessages)["media"]>;
 export type Notice = z.infer<(typeof ServerMessages)["notice"]>;

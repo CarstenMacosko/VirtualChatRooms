@@ -14,7 +14,15 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type Browser, launch as launchChrome, type Page } from "puppeteer-core";
-import { DevLoginResponse, GuestLinkResponse, MeResponse } from "@vcr/protocol";
+import {
+  CreateScanResponse,
+  DevLoginResponse,
+  GuestLinkResponse,
+  MeResponse,
+  RoomsResponse,
+} from "@vcr/protocol";
+import { writePly } from "../apps/api/src/capture/splatFile";
+import { syntheticRoomSplats } from "../apps/api/test/syntheticRoom";
 
 const WEB = process.env.CALL_CHECK_URL ?? "http://localhost:5173";
 const API = `${WEB}/api`;
@@ -182,6 +190,45 @@ async function expectMedia(page: Page, viewer: string, from: string) {
   check(`${viewer} sees and hears ${from}`, ok, JSON.stringify(last));
 }
 
+/** Imports a synthetic room scan for `token` and waits until it's ready; returns its id. */
+async function importScan(token: string, name: string) {
+  const file = writePly(syntheticRoomSplats({ spacing: 0.06 }));
+  const auth = { authorization: `Bearer ${token}` };
+  const created = CreateScanResponse.parse(
+    await (
+      await fetch(`${API}/rooms/scans`, {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ name, fileName: "scan.ply", size: file.length }),
+      })
+    ).json(),
+  );
+  const parts = [];
+  for (const part of created.upload.parts) {
+    const start = (part.partNumber - 1) * created.upload.partSize;
+    const url = part.url.startsWith("/") ? `${API}${part.url}` : part.url;
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: { "content-type": "application/octet-stream" },
+      body: new Uint8Array(file.subarray(start, start + created.upload.partSize)),
+    });
+    parts.push({ partNumber: part.partNumber, etag: res.headers.get("etag") ?? "" });
+  }
+  await fetch(`${API}/rooms/${created.room.id}/upload/complete`, {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ parts }),
+  });
+  for (let i = 0; i < 100; i++) {
+    const { rooms } = RoomsResponse.parse(
+      await (await fetch(`${API}/rooms`, { headers: auth })).json(),
+    );
+    if (rooms.find((r) => r.id === created.room.id)?.status === "ready") return created.room.id;
+    await sleep(200);
+  }
+  throw new Error("the scan never became ready");
+}
+
 const browsers: Browser[] = [];
 try {
   const [one, two, three, four] = await Promise.all([launch(), launch(), launch(), launch()]);
@@ -321,6 +368,26 @@ try {
   await sleep(4000);
   await shot(host.page, "12-room-view");
   await expectMedia(host.page, "host (room view)", `Friend ${run}`);
+
+  // --- The host moves everyone to a scanned room ---
+  const scanId = await importScan(host.auth.token, `Den ${run}`);
+  await click(host.page, "More options");
+  await click(host.page, "Change room…");
+  await click(host.page, "Move here");
+  check(
+    "everyone hears about the move",
+    await hasText(friend.page, `The call moved to Den ${run}`),
+  );
+  const friendRoom = await friend.page.evaluate(
+    () =>
+      (window as unknown as { vcrDebug: { realm: { joinInfo: { room: { id: string } } | null } } })
+        .vcrDebug.realm.joinInfo?.room.id,
+  );
+  check("the friend's call is in the new room", friendRoom === scanId, String(friendRoom));
+  check("the host's room view loads the scan", await hasText(host.page, "WASD to move", 20_000));
+  await sleep(4000);
+  await shot(host.page, "12b-moved-to-scan");
+  await expectMedia(friend.page, "friend (after the move)", `Host ${run}`);
   await click(host.page, "Show video grid");
 
   // --- Mute shows up for others ---

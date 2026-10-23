@@ -27,6 +27,10 @@ export const StartSessionRequest = z.object({
 });
 export type StartSessionRequest = z.input<typeof StartSessionRequest>;
 
+/** `POST /sessions/:id/room`: the host moves everyone to another of their rooms. */
+export const ChangeRoomRequest = z.object({ roomId: z.string() });
+export type ChangeRoomRequest = z.infer<typeof ChangeRoomRequest>;
+
 export const InviteMoreRequest = z.object({ userIds: z.array(z.string()).min(1) });
 export type InviteMoreRequest = z.infer<typeof InviteMoreRequest>;
 

@@ -2,6 +2,7 @@ import {
   Box,
   EllipsisVertical,
   Hand,
+  House as Home,
   LayoutGrid,
   Lock,
   LockOpen,
@@ -22,8 +23,14 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { PoseSender, SAMPLE_ROOM_LAYOUT, scannedRoomLayout, spawnPointFor } from "@vcr/engine";
-import { EmoteId, type JoinSessionResponse, LocoState, type SceneAssets } from "@vcr/protocol";
-import { api } from "../lib/api";
+import {
+  EmoteId,
+  type JoinSessionResponse,
+  LocoState,
+  type RoomInfo,
+  type SceneAssets,
+} from "@vcr/protocol";
+import { api, ApiRequestError } from "../lib/api";
 import { readDeviceProfile } from "../lib/device";
 import { useNow } from "../lib/hooks";
 import { useLive } from "../lib/live";
@@ -130,7 +137,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
     }
   });
   const [panel, setPanel] = useState<PanelTab | null>(null);
-  const [dialog, setDialog] = useState<"invite" | "leave" | "settings" | null>(null);
+  const [dialog, setDialog] = useState<"invite" | "leave" | "settings" | "room" | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
   const autopilotRef = useRef<Autopilot>({ targetId: null });
   // Mirroring your face follows your camera until you choose otherwise.
@@ -141,14 +148,21 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   const face = useFaceTracking(faceOn, selfVideo?.mediaStreamTrack ?? null);
   const now = useNow(250);
   const [joinedAt] = useState(Date.now);
+  const [roomNotice, setRoomNotice] = useState<{ name: string; at: number } | null>(null);
   const needsSound = useNeedsUnlock(audio);
   const me = realm.participants.find((p) => p.id === realm.selfId);
   const ringing = useRinging(props.sessionId, props.isGuest, realm.participants);
 
-  // The room is loaded once, from the first join; rejoins (reconnects) re-sign the same assets.
+  // The room loads from the first join and again only when the host moves the call to another
+  // room; rejoins (reconnects) re-sign the same assets, which are already loaded.
   const [scene, setScene] = useState<SceneAssets | null | undefined>(undefined);
-  const joinedScene = realm.joinInfo?.scene;
-  if (scene === undefined && joinedScene !== undefined) setScene(joinedScene);
+  const [sceneRoom, setSceneRoom] = useState<{ id: string; name: string } | null>(null);
+  const joined = realm.joinInfo;
+  if (joined && joined.room.id !== sceneRoom?.id) {
+    if (sceneRoom) setRoomNotice({ name: joined.room.name, at: now });
+    setSceneRoom({ id: joined.room.id, name: joined.room.name });
+    setScene(joined.scene);
+  }
 
   // In the grid your avatar still stands in the room, so people in the room view see you.
   const selfUserId = me?.userId;
@@ -257,6 +271,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
             ) : (
               <Suspense fallback={<div className="world-loading">Loading room…</div>}>
                 <World
+                  key={sceneRoom?.id}
                   scene={scene}
                   participants={realm.participants}
                   selfId={realm.selfId}
@@ -304,7 +319,9 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
         <div className="call-top">
           <span className="call-title">
             {props.title}
-            {props.subtitle && <span className="muted"> · {props.subtitle}</span>}
+            {(sceneRoom?.name ?? props.subtitle) && (
+              <span className="muted"> · {sceneRoom?.name ?? props.subtitle}</span>
+            )}
           </span>
           {realm.locked && (
             <span className="badge">
@@ -326,6 +343,11 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
         {showNotice && (
           <p className="toast" role="status">
             {NOTICE_COPY[latestNotice.kind]}
+          </p>
+        )}
+        {roomNotice && now - roomNotice.at < 5000 && (
+          <p className="toast" role="status">
+            The call moved to {roomNotice.name}.
           </p>
         )}
         {media.status === "failed" && media.error && (
@@ -372,6 +394,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
         onLock={() => realm.setLocked(!realm.locked)}
         canInvite={canInvite}
         onInvite={() => setDialog("invite")}
+        onChangeRoom={canInvite ? () => setDialog("room") : undefined}
         onSettings={() => setDialog("settings")}
         peopleCount={realm.participants.length}
         panel={panel}
@@ -382,6 +405,17 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
 
       {dialog === "invite" && (
         <InvitePanel sessionId={props.sessionId} onClose={() => setDialog(null)} />
+      )}
+      {dialog === "room" && (
+        <ChangeRoomDialog
+          sessionId={props.sessionId}
+          currentRoomId={sceneRoom?.id ?? null}
+          onMoved={() => {
+            realm.announceRoomChange();
+            setDialog(null);
+          }}
+          onClose={() => setDialog(null)}
+        />
       )}
       {dialog === "settings" && (
         <SettingsDialog media={media} audio={audio} onClose={() => setDialog(null)} />
@@ -479,6 +513,7 @@ function ControlBar(props: {
   onLock(): void;
   canInvite: boolean;
   onInvite(): void;
+  onChangeRoom?: (() => void) | undefined;
   onSettings(): void;
   peopleCount: number;
   panel: PanelTab | null;
@@ -633,6 +668,11 @@ function ControlBar(props: {
                 <Sparkles size={18} />{" "}
                 {media.blur ? "Stop blurring my background" : "Blur my background"}
               </button>
+              {props.onChangeRoom && (
+                <button role="menuitem" onClick={props.onChangeRoom}>
+                  <Home size={18} /> Change room…
+                </button>
+              )}
               <button role="menuitem" onClick={props.onSettings}>
                 <Settings size={18} /> Audio and video settings
               </button>
@@ -751,6 +791,68 @@ function SettingsDialog(props: { media: MediaState; audio: SpatialAudio; onClose
           <p className="muted">This device has one microphone and one camera.</p>
         )}
       </div>
+    </Dialog>
+  );
+}
+
+/** Host: move everyone to another of your rooms (the sample room, or a scan). */
+function ChangeRoomDialog(props: {
+  sessionId: string;
+  currentRoomId: string | null;
+  onMoved(): void;
+  onClose(): void;
+}) {
+  const [rooms, setRooms] = useState<RoomInfo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.rooms().then(
+      (r) => setRooms(r.rooms.filter((room) => room.status === "ready")),
+      () => setError("Couldn't load your rooms."),
+    );
+  }, []);
+  async function move(roomId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.changeRoom(props.sessionId, roomId);
+      props.onMoved();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : "Couldn't change the room.");
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog title="Change room" onClose={props.onClose}>
+      <p className="muted">Everyone in the call moves with you.</p>
+      {!rooms ? (
+        <p className="muted">Loading rooms…</p>
+      ) : (
+        <ul className="rows">
+          {rooms.map((r) => (
+            <li key={r.id}>
+              <span className="grow">
+                <b>{r.name}</b>
+                <span className="muted">
+                  {r.kind === "sample"
+                    ? "Built-in sample room"
+                    : r.scan
+                      ? `Your scan · ${r.scan.size.width.toFixed(1)} × ${r.scan.size.depth.toFixed(1)} m`
+                      : "Your scan"}
+                </span>
+              </span>
+              {r.id === props.currentRoomId ? (
+                <span className="muted">Here now</span>
+              ) : (
+                <button className="primary small" disabled={busy} onClick={() => void move(r.id)}>
+                  Move here
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && <p className="error">{error}</p>}
     </Dialog>
   );
 }

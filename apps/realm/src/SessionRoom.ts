@@ -12,6 +12,7 @@ import {
   decodePose,
   encodeRelayedPose,
   type ChatBroadcast,
+  type RoomChangedBroadcast,
   type EmoteBroadcast,
   HOST_ARRIVAL_MS,
   HOST_GRACE_MS,
@@ -81,6 +82,13 @@ export class SessionRoom extends Room<{ state: SessionState }> {
         at: Date.now(),
       };
       this.broadcast(RealmMessage.chat, broadcast);
+    }),
+
+    [RealmMessage.roomChanged]: validate(ClientMessages.roomChanged, (client) => {
+      const p = this.state.participants.get(client.sessionId);
+      if (!p || !isHost(p.role)) return;
+      const broadcast: RoomChangedBroadcast = { by: client.sessionId };
+      this.broadcast(RealmMessage.roomChanged, broadcast);
     }),
 
     [RealmMessage.raiseHand]: validate(ClientMessages.raiseHand, (client, { raised }) => {

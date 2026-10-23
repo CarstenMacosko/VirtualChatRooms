@@ -133,6 +133,13 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
         setEmotes((prev) => ({ ...prev, [msg.from]: { emote: msg.emote, at: Date.now() } }));
       });
       room.onMessage(RealmMessage.media, (grant: MediaGrant) => setMediaGrant(grant));
+      // The host moved the gathering: fetch the new room's assets (same realm connection).
+      room.onMessage(RealmMessage.roomChanged, () => {
+        void joinRef.current().then(
+          (next) => !cancelled && setJoinInfo(next),
+          () => {},
+        );
+      });
       room.onMessage(RealmMessage.chat, (message: ChatBroadcast) => {
         setChat((prev) => [...prev.slice(-199), message]);
       });
@@ -189,6 +196,8 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
       endSession: () => send(RealmMessage.endSession, {}),
       sendChat: (text: string) => send(RealmMessage.chat, { text }),
       raiseHand: (raised: boolean) => send(RealmMessage.raiseHand, { raised }),
+      /** Host, after the API moved the session: everyone (you included) loads the new room. */
+      announceRoomChange: () => send(RealmMessage.roomChanged, {}),
       /** Try again after a "locked" refusal. */
       retry: () => {
         setStatus("connecting");

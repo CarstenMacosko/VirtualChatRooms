@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
+  ChangeRoomRequest,
   GuestJoinRequest,
   type GuestLinkInfo,
   type GuestLinkResponse,
@@ -325,6 +326,25 @@ export function sessionRoutes(app: FastifyInstance, ctx: Services) {
     const row = await hostedLive(req.params.id, me(req), reply);
     if (!row) return;
     await invite(row.session.id, me(req), row.room.name, body.userIds);
+    return gatherings.info(row.session.id);
+  });
+
+  // Move a live gathering to another of the host's ready rooms. Clients rejoin (the realm tells
+  // them) and get the new room's signed assets.
+  app.post<IdParams>("/sessions/:id/room", auth, async (req, reply) => {
+    const body = parseBody(ChangeRoomRequest, req, reply);
+    if (!body) return;
+    const row = await hostedLive(req.params.id, me(req), reply);
+    if (!row) return;
+    const [room] = await db
+      .select()
+      .from(rooms)
+      .where(and(eq(rooms.id, body.roomId), eq(rooms.ownerId, me(req))));
+    if (!room) return sendError(reply, 404, "not_found", "You can only use your own rooms.");
+    if (room.status !== "ready") {
+      return sendError(reply, 409, "room_not_ready", "That room isn't ready yet.");
+    }
+    await db.update(sessions).set({ roomId: room.id }).where(eq(sessions.id, row.session.id));
     return gatherings.info(row.session.id);
   });
 

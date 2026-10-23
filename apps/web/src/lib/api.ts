@@ -132,6 +132,8 @@ export const api = {
   joinSession: (id: string) => request(JoinSessionResponse, `/sessions/${id}/join`, post()),
   declineSession: (id: string) => request(NoContent, `/sessions/${id}/decline`, post()),
   endSession: (id: string) => request(NoContent, `/sessions/${id}/end`, post()),
+  changeRoom: (id: string, roomId: string) =>
+    request(SessionInfo, `/sessions/${id}/room`, post({ roomId })),
   inviteMore: (id: string, userIds: string[]) =>
     request(SessionInfo, `/sessions/${id}/invites`, post({ userIds })),
   createGuestLink: (id: string) =>

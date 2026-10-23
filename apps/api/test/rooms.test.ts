@@ -281,6 +281,33 @@ describe("room scans", () => {
     await owner.call("POST", `/sessions/${session.id}/end`);
   });
 
+  it("moves a live gathering to another room, host only", async () => {
+    const { rooms } = RoomsResponse.parse((await owner.call("GET", "/rooms")).json());
+    const sample = rooms.find((r) => r.kind === "sample")!;
+    const session = SessionInfo.parse(
+      (await owner.call("POST", "/sessions", { roomId: sample.id })).json(),
+    );
+    const before = JoinSessionResponse.parse(
+      (await owner.call("POST", `/sessions/${session.id}/join`)).json(),
+    );
+    expect(before.scene).toBeNull();
+
+    const stranger = await person("Room Thief");
+    expect(
+      (await stranger.call("POST", `/sessions/${session.id}/room`, { roomId: ready.id }))
+        .statusCode,
+    ).toBe(404);
+    const moved = await owner.call("POST", `/sessions/${session.id}/room`, { roomId: ready.id });
+    expect(moved.statusCode).toBe(200);
+    expect(SessionInfo.parse(moved.json()).room.id).toBe(ready.id);
+    const after = JoinSessionResponse.parse(
+      (await owner.call("POST", `/sessions/${session.id}/join`)).json(),
+    );
+    expect(after.room.id).toBe(ready.id);
+    expect(after.scene?.manifest.roomId).toBe(ready.id);
+    await owner.call("POST", `/sessions/${session.id}/end`);
+  });
+
   it("lets the owner fix the scale and rename", async () => {
     const res = await owner.call("PATCH", `/rooms/${ready.id}`, { heightMeters: 3, name: "Den" });
     expect(res.statusCode).toBe(200);
