@@ -1,10 +1,10 @@
 :root {
-  --bg: #0b0f1c;
-  --panel: #151b2e;
-  --panel-2: #1d2540;
-  --text: #eef1fb;
-  --muted: #9aa3c0;
-  --accent: #7c8cff;
+  --bg: #0a1628;
+  --panel: #11223f;
+  --panel-2: #1a2f54;
+  --text: #f2f6fc;
+  --muted: #9fb2d0;
+  --accent: #2f5bea;
   --ok: #3ecf8e;
   --bad: #ff6b6b;
   --radius: 14px;
@@ -35,7 +35,7 @@ button {
   border-radius: 10px;
   padding: 10px 16px;
   background: var(--accent);
-  color: #0b0f1c;
+  color: #ffffff;
   font-weight: 600;
 }
 button:disabled {
@@ -59,7 +59,7 @@ button.toggle {
   color: var(--text);
 }
 button.toggle.on {
-  background: #2a3563;
+  background: #1f3f73;
 }
 button.link {
   background: none;
@@ -112,7 +112,7 @@ input {
   font: inherit;
   color: var(--text);
   background: var(--panel-2);
-  border: 1px solid #2c365a;
+  border: 1px solid #28426e;
   border-radius: 10px;
   padding: 10px 12px;
 }
@@ -141,7 +141,7 @@ input {
   font-size: 14px;
   padding: 3px 10px;
   border-radius: 999px;
-  background: rgb(11 15 28 / 0.75);
+  background: rgb(10 22 40 / 0.75);
   pointer-events: none;
 }
 .emote-bubble {
@@ -204,7 +204,7 @@ input {
   margin: 0;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgb(11 15 28 / 0.8);
+  background: rgb(10 22 40 / 0.8);
   font-size: 12px;
   line-height: 1.5;
   pointer-events: none;
@@ -275,7 +275,7 @@ select {
   font: inherit;
   color: var(--text);
   background: var(--panel-2);
-  border: 1px solid #2c365a;
+  border: 1px solid #28426e;
   border-radius: 10px;
   padding: 8px 10px;
 }
@@ -285,7 +285,7 @@ select {
   height: 8px;
   margin-right: 8px;
   border-radius: 50%;
-  background: #4a5378;
+  background: #3d5a86;
   vertical-align: middle;
 }
 .dot.on {
@@ -338,7 +338,7 @@ label.check {
 }
 .chip.on {
   background: var(--accent);
-  color: #0b0f1c;
+  color: #ffffff;
 }
 .group-form {
   display: grid;
@@ -373,7 +373,7 @@ label.check {
 .creator-preview {
   position: relative;
   min-height: 60vh;
-  background: radial-gradient(circle at 50% 35%, #2a3563 0%, #121833 70%);
+  background: radial-gradient(circle at 50% 35%, #1f3f73 0%, #0b1830 70%);
 }
 .try-on {
   position: absolute;
@@ -384,7 +384,7 @@ label.check {
   gap: 6px;
   padding: 6px;
   border-radius: 999px;
-  background: rgb(21 27 46 / 0.85);
+  background: rgb(17 34 63 / 0.85);
 }
 .try-on button {
   background: var(--panel-2);
@@ -491,7 +491,7 @@ label.check {
   color: var(--text);
 }
 .chips button.chip.on {
-  color: #0b0f1c;
+  color: #ffffff;
 }
 .start-options {
   display: grid;

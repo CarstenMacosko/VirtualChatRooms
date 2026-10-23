@@ -79,12 +79,14 @@ export function AccountSignIn() {
 
   if (phase.name === "refused") {
     return (
-      <main className="signin">
-        <div className="card">
+      <main className="center-page">
+        <div className="card link-card">
           <h1>Sorry!</h1>
           <p>{phase.message}</p>
           <p className="hint">We didn't keep anything from this sign-up.</p>
-          <button onClick={() => setPhase({ name: "provider" })}>OK</button>
+          <button className="primary big" onClick={() => setPhase({ name: "provider" })}>
+            OK
+          </button>
         </div>
       </main>
     );
@@ -95,7 +97,11 @@ export function AccountSignIn() {
   }
 
   if (!isLoaded || phase.name === "exchanging" || isSignedIn) {
-    return <div className="world-loading">Signing you in…</div>;
+    return (
+      <main className="center-page">
+        <p className="muted">Signing you in…</p>
+      </main>
+    );
   }
 
   return (
@@ -129,8 +135,8 @@ function ProfileStep(props: {
   }
 
   return (
-    <main className="signin">
-      <form className="card" onSubmit={submit}>
+    <main className="center-page">
+      <form className="card link-card" onSubmit={submit}>
         <h1>One more step</h1>
         <p className="muted">Tell us what to call you, and your birthday.</p>
         <label>
@@ -161,7 +167,7 @@ function ProfileStep(props: {
             {props.error}
           </p>
         )}
-        <button type="submit" disabled={busy}>
+        <button type="submit" className="primary big" disabled={busy}>
           {busy ? "One moment…" : "Create my account"}
         </button>
       </form>

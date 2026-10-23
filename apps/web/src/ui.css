@@ -633,6 +633,11 @@ code {
 .link-card > button.big {
   width: 100%;
 }
+/* Forms that are the card itself (guest join, account details): fields read left to right. */
+form.link-card label {
+  width: 100%;
+  text-align: left;
+}
 .link-card .ghost {
   justify-self: center;
 }
