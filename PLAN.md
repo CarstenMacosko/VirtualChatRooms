@@ -517,7 +517,12 @@ Not done yet, or not measured:
   - People and chat panels, device settings, and a leave or end dialog.
   - "Calling…" tiles while people ring, and a "tap to turn on sound" banner when the browser holds audio back.
   - In the grid, voices are mixed flat and everyone is audible. Each person's avatar still stands in the room for anyone in the room view.
-- **Around the call:** a Meet-style pre-join with device pickers, a Duo-style incoming-call screen, and a Home portal (New call, join by link, contacts and groups with call buttons). Signed-out visitors see a landing page.
+- **Around the call:**
+  - A Meet-style pre-join with device pickers, and a Duo-style incoming-call screen.
+  - A Home portal: New call, join by link, contacts and groups with call buttons, and **Recents** (call history with call-back and join).
+  - **Missed-call** notices: a push notification when the app is closed, a toast with Join when it's open.
+  - Signed-out visitors see a landing page.
+- **In the call, also:** background blur (on-device, remembered per device), "Poor connection" badges on tiles, and an Add people button while you're alone. On phones the bar keeps six buttons, and the rest are in More.
 - **Across devices:**
   - Device sign-in links (QR) and invite links that make accounts without Clerk.
   - Personal call links that ring you, including by Web Push, and let the caller join as a guest.
@@ -530,7 +535,7 @@ Not done yet, or not measured:
   - `pnpm call-check` runs four headless Chromes with fake cameras and microphones. Everyone sees video frames and hears audio: host and contact (1:1), a phone-sized guest, and a call-link caller.
   - It also covers chat, the room view, mute and ending, against the dev server, the production build, and through a `pnpm share` tunnel with a phone signing in by device link.
 - **Found along the way:** a sleeping or locked Mac stops the system audio clock, which silences every Web Audio graph. The check uses Chrome's virtual audio output so it doesn't depend on that.
-- **Not done:** real phones and cameras are still unverified by me (I can't hold a phone), and so is the Fly/Pages deploy (no account yet, and no Docker on this Mac). No call history, no blur or backgrounds, no captions, and no mid-call room switching (Phase 5).
+- **Not done:** real phones and cameras are still unverified by me (I can't hold a phone), and so is the Fly/Pages deploy (no account yet, and no Docker on this Mac). No virtual backgrounds (images), no captions, no call recording, and no mid-call room switching (Phase 5).
 
 Planned scope:
 

@@ -304,6 +304,17 @@ try {
   check("chat reaches others", await hasText(host.page, "Hi from my phone!"));
   await shot(host.page, "11-chat");
 
+  // --- Background blur keeps video flowing ---
+  await click(host.page, "More options");
+  await click(host.page, "Blur my background");
+  await sleep(5000);
+  const blurred = await host.page.evaluate(
+    () => (window as unknown as { vcrDebug: { media: { blur: boolean } } }).vcrDebug.media.blur,
+  );
+  check("background blur turns on", blurred);
+  await expectMedia(friend.page, "friend (host blurred)", `Host ${run}`);
+  await shot(friend.page, "11b-host-blurred");
+
   // --- The 3D room view, and back to the grid ---
   await click(host.page, "Show the 3D room");
   check("the room view loads", await hasText(host.page, "WASD to move", 20_000));

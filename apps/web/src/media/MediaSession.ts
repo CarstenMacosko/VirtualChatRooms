@@ -34,6 +34,19 @@ export interface MediaSnapshot {
   screenSharing: boolean;
   /** Identities whose connection is struggling right now (you included). */
   poorConnection: ReadonlyMap<string, "poor" | "lost">;
+  /** Your camera's background is blurred (kept across camera off/on). */
+  blur: boolean;
+}
+
+const BLUR_KEY = "vcr.blur";
+const BLUR_RADIUS = 14;
+
+function rememberedBlur() {
+  try {
+    return localStorage.getItem(BLUR_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 /** Chosen input devices (deviceId), or undefined for the browser's default. */
@@ -65,6 +78,7 @@ export class MediaSession {
     screens: new Map(),
     screenSharing: false,
     poorConnection: new Map(),
+    blur: rememberedBlur(),
   };
   private listeners = new Set<() => void>();
   private interestTimer: ReturnType<typeof setInterval> | undefined;
@@ -190,6 +204,43 @@ export class MediaSession {
     this.syncLocal();
   }
 
+  /**
+   * Blurs the background behind you (on-device segmentation, like Meet). The library loads only
+   * when someone turns it on; the choice is remembered on this device.
+   */
+  async setBlur(on: boolean) {
+    this.update({ blur: on });
+    try {
+      localStorage.setItem(BLUR_KEY, on ? "1" : "0");
+    } catch {
+      // fine: not remembered
+    }
+    await this.applyBlur();
+  }
+
+  private async applyBlur() {
+    const pub = this.room.localParticipant.getTrackPublication(Track.Source.Camera);
+    const track = pub?.videoTrack as LocalVideoTrack | undefined;
+    if (!track) return;
+    try {
+      if (this.snapshot.blur) {
+        if (track.getProcessor()) return;
+        const { BackgroundBlur, supportsBackgroundProcessors } =
+          await import("@livekit/track-processors");
+        if (!supportsBackgroundProcessors()) {
+          this.update({ blur: false, error: "This browser can't blur your background." });
+          return;
+        }
+        await track.setProcessor(BackgroundBlur(BLUR_RADIUS));
+      } else if (track.getProcessor()) {
+        await track.stopProcessor();
+      }
+    } catch (err) {
+      this.update({ blur: false, error: `Background blur: ${String(err)}` });
+    }
+    this.syncLocal();
+  }
+
   /** Switches to another microphone or camera mid-call. */
   async switchDevice(kind: "audioinput" | "videoinput", deviceId: string) {
     try {
@@ -244,7 +295,11 @@ export class MediaSession {
       this.dropVideo(p.identity);
       this.dropScreen(p.identity);
     });
-    r.on(RoomEvent.LocalTrackPublished, () => this.syncLocal());
+    r.on(RoomEvent.LocalTrackPublished, (pub) => {
+      this.syncLocal();
+      // A camera turned back on gets the blur again.
+      if (pub.source === Track.Source.Camera && this.snapshot.blur) void this.applyBlur();
+    });
     r.on(RoomEvent.LocalTrackUnpublished, () => this.syncLocal());
     // A host muting you arrives as a server-side mute of your track.
     r.on(RoomEvent.TrackMuted, (_pub, p) => p.isLocal && this.syncLocal());

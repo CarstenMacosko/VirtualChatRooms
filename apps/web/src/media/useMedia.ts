@@ -14,6 +14,7 @@ const OFF: MediaSnapshot = {
   screens: new Map(),
   screenSharing: false,
   poorConnection: new Map(),
+  blur: false,
 };
 const noopSubscribe = () => () => {};
 
@@ -95,6 +96,7 @@ export function useMedia(
       void session?.setCamera(on);
     },
     setScreenShare: (on: boolean) => void session?.setScreenShare(on),
+    setBlur: (on: boolean) => void session?.setBlur(on),
     flipCamera: () => void session?.flipCamera(),
     switchDevice: (kind: "audioinput" | "videoinput", deviceId: string) => {
       const devices = { ...wanted.current.devices };

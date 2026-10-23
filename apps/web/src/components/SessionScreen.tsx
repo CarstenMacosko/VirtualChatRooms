@@ -12,6 +12,7 @@ import {
   PhoneOff,
   Settings,
   Smile,
+  Sparkles,
   SwitchCamera,
   UserPlus,
   Users,
@@ -624,6 +625,14 @@ function ControlBar(props: {
                   <UserPlus size={18} /> Add people
                 </button>
               )}
+              <button
+                role="menuitem"
+                onClick={() => media.setBlur(!media.blur)}
+                disabled={!media.cameraOn}
+              >
+                <Sparkles size={18} />{" "}
+                {media.blur ? "Stop blurring my background" : "Blur my background"}
+              </button>
               <button role="menuitem" onClick={props.onSettings}>
                 <Settings size={18} /> Audio and video settings
               </button>

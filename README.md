@@ -7,7 +7,8 @@
 - **Calls that look like calls:**
   - A Meet/FaceTime-style video grid. A 1:1 call fills the screen with you in a corner.
   - Round controls for mic, camera, flip camera, screen sharing, reactions and raise hand.
-  - People and chat panels, and device settings.
+  - People and chat panels, background blur, and device settings.
+  - Recents and missed-call notifications.
   - The 3D room is one button away.
 - **Calling across devices:**
   - Contacts with a call button each, and groups.
