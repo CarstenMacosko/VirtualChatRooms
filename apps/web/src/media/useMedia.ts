@@ -13,6 +13,7 @@ const OFF: MediaSnapshot = {
   videos: new Map(),
   screens: new Map(),
   screenSharing: false,
+  poorConnection: new Map(),
 };
 const noopSubscribe = () => () => {};
 

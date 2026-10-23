@@ -1,4 +1,5 @@
 import {
+  ConnectionQuality,
   facingModeFromLocalTrack,
   type LocalVideoTrack,
   type Participant,
@@ -31,6 +32,8 @@ export interface MediaSnapshot {
   /** Shared screens by identity; yours is under your own id. */
   screens: ReadonlyMap<string, RemoteVideoTrack | LocalVideoTrack>;
   screenSharing: boolean;
+  /** Identities whose connection is struggling right now (you included). */
+  poorConnection: ReadonlyMap<string, "poor" | "lost">;
 }
 
 /** Chosen input devices (deviceId), or undefined for the browser's default. */
@@ -61,6 +64,7 @@ export class MediaSession {
     videos: new Map(),
     screens: new Map(),
     screenSharing: false,
+    poorConnection: new Map(),
   };
   private listeners = new Set<() => void>();
   private interestTimer: ReturnType<typeof setInterval> | undefined;
@@ -250,6 +254,14 @@ export class MediaSession {
       const lastSpokeAt = new Map(this.snapshot.lastSpokeAt);
       for (const s of speakers) lastSpokeAt.set(s.identity, now);
       this.update({ speaking: new Set(speakers.map((s) => s.identity)), lastSpokeAt });
+    });
+    // Only bad connections are worth showing (like Meet's "unstable connection").
+    r.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+      const poorConnection = new Map(this.snapshot.poorConnection);
+      if (quality === ConnectionQuality.Poor) poorConnection.set(participant.identity, "poor");
+      else if (quality === ConnectionQuality.Lost) poorConnection.set(participant.identity, "lost");
+      else if (!poorConnection.delete(participant.identity)) return;
+      this.update({ poorConnection });
     });
     r.on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
       if (topic === POSE_TOPIC && participant) this.onPose?.(participant.identity, payload);

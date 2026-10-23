@@ -1,5 +1,5 @@
 import type { LocalVideoTrack, RemoteVideoTrack } from "livekit-client";
-import { Hand, MicOff, Pin, PinOff } from "lucide-react";
+import { Hand, MicOff, Pin, PinOff, UserPlus, WifiOff } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { orderTiles } from "@vcr/engine";
 import type { ParticipantView } from "@vcr/protocol";
@@ -65,6 +65,7 @@ export interface TileProps {
   now: number;
   /** Room view renders avatar headshots; the grid shows initials. */
   headshots: boolean;
+  connection?: "poor" | "lost" | undefined;
   onPin?(): void;
   /** Smaller text and controls (filmstrip, picture-in-picture). */
   small?: boolean;
@@ -92,6 +93,12 @@ export function Tile(props: TileProps) {
       {emote && (
         <span className="tile-emote" key={emote.at} aria-hidden>
           {EMOTE_GLYPHS[emote.emote]}
+        </span>
+      )}
+      {props.connection && (
+        <span className={`tile-connection ${props.connection}`} title="Unstable connection">
+          <WifiOff size={14} />
+          {props.connection === "lost" ? "Reconnecting…" : "Poor connection"}
         </span>
       )}
       {p.handRaised && (
@@ -178,6 +185,8 @@ export interface StageProps {
   onPin(id: string | null): void;
   /** People being rung who haven't joined. */
   ringing: Array<{ userId: string; displayName: string }>;
+  /** Shown while you're alone: add people. */
+  onInvite?: (() => void) | undefined;
 }
 
 /**
@@ -207,6 +216,7 @@ export function VideoStage(props: StageProps) {
       emote={emotes[p.id]}
       now={now}
       headshots={false}
+      connection={media.poorConnection.get(p.id)}
       onPin={() => props.onPin(props.pinned === p.id ? null : p.id)}
       {...extra}
     />
@@ -284,7 +294,14 @@ export function VideoStage(props: StageProps) {
         ))}
       </div>
       {count === 1 && (
-        <p className="stage-hint">Waiting for others to join. Invite people from the bar below.</p>
+        <div className="stage-hint">
+          <p>Waiting for others to join.</p>
+          {props.onInvite && (
+            <button className="invite-cta" onClick={props.onInvite}>
+              <UserPlus size={18} /> Add people
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

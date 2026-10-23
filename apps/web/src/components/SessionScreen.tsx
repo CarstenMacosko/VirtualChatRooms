@@ -134,7 +134,8 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   const autopilotRef = useRef<Autopilot>({ targetId: null });
   // Mirroring your face follows your camera until you choose otherwise.
   const [faceChoice, setFaceChoice] = useState<boolean | null>(null);
-  const faceOn = view === "room" && (faceChoice ?? media.cameraOn);
+  // Face tracking is heavy for phones; there it starts off.
+  const faceOn = view === "room" && (faceChoice ?? (media.cameraOn && !isTouch()));
   const selfVideo = realm.selfId ? media.videos.get(realm.selfId) : undefined;
   const face = useFaceTracking(faceOn, selfVideo?.mediaStreamTrack ?? null);
   const now = useNow(250);
@@ -291,6 +292,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
             pinned={pinned}
             onPin={setPinned}
             ringing={ringing}
+            onInvite={canInvite ? () => setDialog("invite") : undefined}
           />
         ) : (
           <div className="world-loading">
@@ -542,7 +544,7 @@ function ControlBar(props: {
             <MonitorUp size={22} />
           </button>
         )}
-        <div className="popup-anchor">
+        <div className="popup-anchor wide-only">
           <button
             className={`round${popup === "emotes" ? " active" : ""}`}
             onClick={() => setPopup(popup === "emotes" ? null : "emotes")}
@@ -563,7 +565,7 @@ function ControlBar(props: {
           )}
         </div>
         <button
-          className={`round${props.handRaised ? " active" : ""}`}
+          className={`round wide-only${props.handRaised ? " active" : ""}`}
           onClick={props.onHand}
           disabled={!props.connected}
           aria-pressed={props.handRaised}
@@ -588,9 +590,35 @@ function ControlBar(props: {
             aria-expanded={popup === "more"}
           >
             <EllipsisVertical size={22} />
+            {props.unread > 0 && <span className="dot-badge narrow-only">{props.unread}</span>}
           </button>
           {popup === "more" && (
             <div className="popup menu" role="menu" onClick={() => setPopup(null)}>
+              <div className="narrow-only menu-emotes" aria-label="Reactions">
+                {EmoteId.options.map((id) => (
+                  <button
+                    key={id}
+                    onClick={() => props.onEmote(id)}
+                    aria-label={id}
+                    disabled={!props.connected}
+                  >
+                    {EMOTE_GLYPHS[id]}
+                  </button>
+                ))}
+              </div>
+              <button role="menuitem" className="narrow-only" onClick={props.onHand}>
+                <Hand size={18} /> {props.handRaised ? "Lower hand" : "Raise hand"}
+              </button>
+              <button
+                role="menuitem"
+                className="narrow-only"
+                onClick={() => props.onPanel("people")}
+              >
+                <Users size={18} /> People ({props.peopleCount})
+              </button>
+              <button role="menuitem" className="narrow-only" onClick={() => props.onPanel("chat")}>
+                <MessageSquare size={18} /> Chat{props.unread > 0 ? ` (${props.unread} new)` : ""}
+              </button>
               {props.canInvite && (
                 <button role="menuitem" onClick={props.onInvite}>
                   <UserPlus size={18} /> Add people
@@ -642,7 +670,7 @@ function ControlBar(props: {
         </button>
       </div>
 
-      <div className="bar-right">
+      <div className="bar-right wide-only">
         <button
           className={`round small${props.panel === "people" ? " active" : ""}`}
           onClick={() => props.onPanel("people")}

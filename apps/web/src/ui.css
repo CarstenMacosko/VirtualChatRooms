@@ -1000,9 +1000,35 @@ button.round.small.active {
   bottom: 18px;
   left: 0;
   right: 0;
-  margin: 0;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
   text-align: center;
   color: var(--c-muted);
+}
+.stage-hint p {
+  margin: 0;
+}
+.invite-cta {
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: #c9dcff;
+  color: #10213f;
+}
+.narrow-only {
+  display: none !important;
+}
+.menu-emotes {
+  gap: 2px;
+  padding: 4px 4px 8px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.1);
+  margin-bottom: 4px;
+}
+.menu-emotes button {
+  flex: 1;
+  justify-content: center !important;
+  font-size: 22px;
+  padding: 8px 0 !important;
 }
 .one-to-one > .tile {
   position: absolute;
@@ -1590,8 +1616,12 @@ video.mirror {
 
 @media (max-width: 640px) {
   .hide-narrow,
-  .bar-left {
-    display: none;
+  .bar-left,
+  .wide-only {
+    display: none !important;
+  }
+  .narrow-only {
+    display: flex !important;
   }
   .portal-top {
     padding: 8px 12px;
@@ -1620,13 +1650,12 @@ video.mirror {
     align-self: center;
   }
   .control-bar {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
-    gap: 6px;
   }
   .bar-center {
-    gap: 6px;
-    overflow-x: auto;
+    justify-content: center;
+    gap: 8px;
   }
   button.round {
     width: 44px;
@@ -1649,23 +1678,24 @@ video.mirror {
     right: 12px;
     bottom: 12px;
   }
+  /* Tiles up the right side, so the joystick and jump button keep the bottom. */
   .filmstrip {
-    top: auto;
-    left: 8px;
+    top: 56px;
     right: 8px;
-    bottom: 8px;
-    width: auto;
-    height: 84px;
-    flex-direction: row;
+    bottom: auto;
+    width: 104px;
+    max-height: 50%;
   }
-  .filmstrip > div {
-    flex: 0 0 140px;
+  .filmstrip .tile {
+    aspect-ratio: 3 / 4;
   }
   .incoming-actions {
     gap: 56px;
   }
   .call .popup.menu {
-    right: -40px;
+    right: -70px;
+    max-height: 70vh;
+    overflow-y: auto;
   }
 }
 
@@ -1765,4 +1795,28 @@ video.mirror {
 }
 .recents > button.small {
   justify-self: start;
+}
+
+.tile-connection {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: rgb(0 0 0 / 0.6);
+  color: #ffd166;
+  white-space: nowrap;
+}
+.tile-connection.lost {
+  color: #ff9b9b;
+}
+.tile.small .tile-connection {
+  font-size: 0;
+  gap: 0;
+  padding: 4px;
 }

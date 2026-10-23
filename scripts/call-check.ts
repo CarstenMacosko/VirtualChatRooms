@@ -290,6 +290,8 @@ try {
   await phoneContext.close();
 
   // --- Chat ---
+  // On a phone, chat is in the More menu.
+  await click(guest, "More options");
   await click(guest, "Chat");
   await guest.waitForSelector('input[aria-label="Message"]');
   console.log(
