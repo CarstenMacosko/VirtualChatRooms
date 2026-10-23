@@ -6,11 +6,14 @@ import { refreshSession, useAuth } from "./auth";
 
 type Ring = Extract<LiveEvent, { type: "ring" }>;
 type InviteResponse = Extract<LiveEvent, { type: "invite-response" }>;
+type IncomingCall = Extract<LiveEvent, { type: "call" }>;
 
 interface LiveStore {
   connected: boolean;
   /** Calls ringing right now, newest last. */
   rings: Ring[];
+  /** People calling through your call link right now, newest last. */
+  calls: IncomingCall[];
   /** Recent answers to calls you made, for toasts. */
   responses: (InviteResponse & { at: number })[];
   /** Bumped when contacts (or their presence) change, so screens refetch. */
@@ -20,18 +23,21 @@ interface LiveStore {
   /** Bumped when one of your rooms changes (a scan finished processing, say). */
   roomsVersion: number;
   dismissRing(sessionId: string): void;
+  dismissCall(callId: string): void;
   dismissResponse(at: number): void;
 }
 
 export const useLive = create<LiveStore>((set) => ({
   connected: false,
   rings: [],
+  calls: [],
   responses: [],
   contactsVersion: 0,
   sessionsVersion: 0,
   roomsVersion: 0,
   dismissRing: (sessionId) =>
     set((s) => ({ rings: s.rings.filter((r) => r.sessionId !== sessionId) })),
+  dismissCall: (callId) => set((s) => ({ calls: s.calls.filter((c) => c.callId !== callId) })),
   dismissResponse: (at) => set((s) => ({ responses: s.responses.filter((r) => r.at !== at) })),
 }));
 
@@ -56,6 +62,10 @@ function apply(event: LiveEvent) {
         };
       case "contacts-changed":
         return { contactsVersion: s.contactsVersion + 1 };
+      case "call":
+        return { calls: [...s.calls.filter((c) => c.callId !== event.callId), event] };
+      case "call-ended":
+        return { calls: s.calls.filter((c) => c.callId !== event.callId) };
       case "rooms-changed":
         return { roomsVersion: s.roomsVersion + 1 };
     }
@@ -131,7 +141,7 @@ export function useLiveEvents(token: string) {
     return () => {
       controller.abort();
       clearTimeout(retry);
-      useLive.setState({ connected: false, rings: [] });
+      useLive.setState({ connected: false, rings: [], calls: [] });
     };
   }, [token]);
 }

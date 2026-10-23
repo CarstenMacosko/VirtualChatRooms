@@ -2,6 +2,7 @@ import { Client, type Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PoseHub } from "@vcr/engine";
 import {
+  type ChatBroadcast,
   type EmoteBroadcast,
   type EmoteId,
   type JoinSessionResponse,
@@ -82,6 +83,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
   const [mediaGrant, setMediaGrant] = useState<MediaGrant | null>(null);
   const [emotes, setEmotes] = useState<Record<string, ActiveEmote>>({});
   const [notices, setNotices] = useState<RealmNotice[]>([]);
+  const [chat, setChat] = useState<ChatBroadcast[]>([]);
   const roomRef = useRef<Room | null>(null);
   const [poseHub] = useState(() => new PoseHub());
   // Bumping `attempt` re-runs the effect, which rejoins after a drop or failed join.
@@ -131,6 +133,9 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
         setEmotes((prev) => ({ ...prev, [msg.from]: { emote: msg.emote, at: Date.now() } }));
       });
       room.onMessage(RealmMessage.media, (grant: MediaGrant) => setMediaGrant(grant));
+      room.onMessage(RealmMessage.chat, (message: ChatBroadcast) => {
+        setChat((prev) => [...prev.slice(-199), message]);
+      });
       room.onMessage(RealmMessage.notice, (notice: Notice) => {
         setNotices((prev) => [...prev.slice(-3), { ...notice, at: Date.now() }]);
       });
@@ -182,6 +187,8 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
         send(RealmMessage.setCoHost, { target, cohost }),
       transferHost: (target: string) => send(RealmMessage.transferHost, { target }),
       endSession: () => send(RealmMessage.endSession, {}),
+      sendChat: (text: string) => send(RealmMessage.chat, { text }),
+      raiseHand: (raised: boolean) => send(RealmMessage.raiseHand, { raised }),
       /** Try again after a "locked" refusal. */
       retry: () => {
         setStatus("connecting");
@@ -201,6 +208,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
     mediaGrant,
     emotes,
     notices,
+    chat,
     poseHub,
     ...actions,
   };

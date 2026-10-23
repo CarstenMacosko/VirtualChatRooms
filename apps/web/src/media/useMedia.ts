@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RealmSession } from "../lib/realm";
-import { MediaSession, type MediaSnapshot } from "./MediaSession";
+import { type DeviceChoice, MediaSession, type MediaSnapshot } from "./MediaSession";
 import type { SpatialAudio } from "./SpatialAudio";
 
 const OFF: MediaSnapshot = {
@@ -11,6 +11,8 @@ const OFF: MediaSnapshot = {
   speaking: new Set(),
   lastSpokeAt: new Map(),
   videos: new Map(),
+  screens: new Map(),
+  screenSharing: false,
 };
 const noopSubscribe = () => () => {};
 
@@ -23,7 +25,7 @@ const noopSubscribe = () => () => {};
 export function useMedia(
   realm: RealmSession,
   audio: SpatialAudio,
-  initial: { mic: boolean; camera: boolean },
+  initial: { mic: boolean; camera: boolean; devices?: DeviceChoice },
 ) {
   const [session, setSession] = useState<MediaSession | null>(null);
   // What you last chose, carried across reconnects.
@@ -32,7 +34,7 @@ export function useMedia(
   const { mediaGrant, poseHub } = realm;
   useEffect(() => {
     if (!mediaGrant) return;
-    const media = new MediaSession(audio);
+    const media = new MediaSession(audio, wanted.current.devices);
     media.onPose = (from, bytes) => poseHub.ingestPose(from, bytes, performance.now());
     // The session is an external connection whose lifetime this effect owns; React only needs
     // the handle.
@@ -53,7 +55,7 @@ export function useMedia(
   // A host mute or a failed camera changes what you have; remember that, not the old choice.
   useEffect(() => {
     if (snapshot.status === "connected") {
-      wanted.current = { mic: snapshot.micOn, camera: snapshot.cameraOn };
+      wanted.current = { ...wanted.current, mic: snapshot.micOn, camera: snapshot.cameraOn };
     }
   }, [snapshot.status, snapshot.micOn, snapshot.cameraOn]);
 
@@ -90,6 +92,15 @@ export function useMedia(
     setCamera: (on: boolean) => {
       wanted.current = { ...wanted.current, camera: on };
       void session?.setCamera(on);
+    },
+    setScreenShare: (on: boolean) => void session?.setScreenShare(on),
+    flipCamera: () => void session?.flipCamera(),
+    switchDevice: (kind: "audioinput" | "videoinput", deviceId: string) => {
+      const devices = { ...wanted.current.devices };
+      if (kind === "audioinput") devices.mic = deviceId;
+      else devices.camera = deviceId;
+      wanted.current = { ...wanted.current, devices };
+      void session?.switchDevice(kind, deviceId);
     },
   };
 }

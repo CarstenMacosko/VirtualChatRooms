@@ -28,6 +28,8 @@ export interface ParticipantView {
   cameraOn: boolean;
   /** Connected to LiveKit. Anyone who isn't still needs poses through the realm relay. */
   onMedia: boolean;
+  /** Raised their hand to speak. */
+  handRaised: boolean;
   /** Their AvatarRecipe as JSON, or "" before they've made one (see `parseRecipe`). */
   avatar: string;
 }
@@ -61,7 +63,13 @@ export const RealmMessage = {
   transferHost: "transferHost",
   /** Owner only: end the gathering for everyone. */
   endSession: "endSession",
+  /** In-call chat. Client → server: { text }; server → clients: ChatBroadcast. Not stored. */
+  chat: "chat",
+  /** Client → server: raise or lower your hand. */
+  raiseHand: "raiseHand",
 } as const;
+
+export const MAX_CHAT_LENGTH = 500;
 
 const Target = z.object({ target: z.string() });
 
@@ -80,6 +88,8 @@ export const ClientMessages = {
   [RealmMessage.setCoHost]: Target.extend({ cohost: z.boolean() }),
   [RealmMessage.transferHost]: Target,
   [RealmMessage.endSession]: z.object({}),
+  [RealmMessage.chat]: z.object({ text: z.string().trim().min(1).max(MAX_CHAT_LENGTH) }),
+  [RealmMessage.raiseHand]: z.object({ raised: z.boolean() }),
 } as const;
 
 export const NoticeKind = z.enum([
@@ -96,7 +106,16 @@ export const ServerMessages = {
   /** `url` is null when the realm has no LiveKit configured; voice and video are then off. */
   [RealmMessage.media]: z.object({ url: z.string().nullable(), token: z.string().nullable() }),
   [RealmMessage.notice]: z.object({ kind: NoticeKind, by: z.string() }),
+  [RealmMessage.chat]: z.object({
+    /** Sender's realm session id. */
+    from: z.string(),
+    name: z.string(),
+    text: z.string(),
+    /** Server time, ms since the epoch. */
+    at: z.number(),
+  }),
 } as const;
+export type ChatBroadcast = z.infer<(typeof ServerMessages)["chat"]>;
 export type EmoteBroadcast = z.infer<(typeof ServerMessages)["emote"]>;
 export type MediaGrant = z.infer<(typeof ServerMessages)["media"]>;
 export type Notice = z.infer<(typeof ServerMessages)["notice"]>;

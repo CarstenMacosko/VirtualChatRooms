@@ -3,6 +3,7 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { type DevLoginResponse, MIN_ACCOUNT_AGE } from "@vcr/protocol";
 import { api, ApiRequestError } from "../lib/api";
 import { setAuthProvider, useAuth } from "../lib/auth";
+import { Landing } from "./Landing";
 
 export const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -98,12 +99,8 @@ export function AccountSignIn() {
   }
 
   return (
-    <main className="signin">
+    <Landing>
       <div className="signin-stack">
-        <div className="brand">
-          <h1>VirtualChatRooms</h1>
-          <p className="muted">Hang out with friends and family as 3D avatars.</p>
-        </div>
         <SignIn routing="hash" withSignUp />
         {error && <p className="error">{error}</p>}
         <p className="hint">
@@ -111,7 +108,7 @@ export function AccountSignIn() {
           link from a parent.
         </p>
       </div>
-    </main>
+    </Landing>
   );
 }
 

@@ -20,7 +20,8 @@
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "bots": "tsx scripts/bots.ts",
-    "make-test-scan": "tsx scripts/make-test-scan.ts"
+    "make-test-scan": "tsx scripts/make-test-scan.ts",
+    "call-check": "tsx scripts/call-check.ts"
   },
   "devDependencies": {
     "@colyseus/sdk": "0.18.5",
@@ -29,6 +30,7 @@
     "@vcr/protocol": "workspace:*",
     "oxlint": "1.89.0",
     "prettier": "3.9.10",
+    "puppeteer-core": "24.10.2",
     "tsx": "4.23.15",
     "turbo": "2.11.10",
     "typescript": "6.0.3"

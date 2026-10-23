@@ -14,6 +14,7 @@ export const Participant = schema(
     onMedia: t.boolean().default(false),
     /** AvatarRecipe JSON; "" until they make one. */
     avatar: t.string().default(""),
+    handRaised: t.boolean().default(false),
     // Added in later phases: groupId (side conversations), seatId (sitting).
   },
   "Participant",

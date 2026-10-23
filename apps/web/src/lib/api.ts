@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
+  AnswerCallResponse,
   ApiError,
+  CallState,
   type AvatarRecipe,
   AvatarResponse,
   ContactsResponse,
@@ -11,16 +13,20 @@ import {
   GuestLinkResponse,
   HealthResponse,
   JoinSessionResponse,
+  LinkInfo,
+  LinkResponse,
   MeResponse,
   RoomInfo,
   RoomsResponse,
   SessionInfo,
   SessionsResponse,
   ShareInfo,
+  StartCallResponse,
   VapidKeyResponse,
   type DevLoginRequest,
   type ExchangeRequest,
   type PushSubscriptionRequest,
+  type AcceptInviteRequest,
   type CompleteUploadRequest,
   type CreateScanRequest,
   type SaveGroupRequest,
@@ -133,6 +139,23 @@ export const api = {
   vapidKey: () => request(VapidKeyResponse, "/push/vapid-key"),
   savePushSubscription: (body: PushSubscriptionRequest) =>
     request(NoContent, "/push/subscriptions", post(body)),
+
+  deviceLink: () => request(LinkResponse, "/me/device-links", post()),
+  inviteLink: () => request(LinkResponse, "/me/invite-links", post()),
+  callLink: () => request(LinkResponse, "/me/call-link"),
+  resetCallLink: () => request(LinkResponse, "/me/call-link/reset", post()),
+  linkInfo: (token: string) => request(LinkInfo, `/links/${token}`),
+  claimDeviceLink: (token: string) => request(DevLoginResponse, `/links/${token}/claim`, post()),
+  acceptInvite: (token: string, body: AcceptInviteRequest) =>
+    request(z.union([DevLoginResponse, z.null()]), `/links/${token}/accept`, post(body)),
+  startCall: (token: string, displayName: string) =>
+    request(StartCallResponse, `/links/${token}/call`, post({ displayName })),
+  callState: (id: string, secret: string) =>
+    request(CallState, `/calls/${id}?secret=${encodeURIComponent(secret)}`),
+  hangUpCall: (id: string, secret: string) =>
+    request(NoContent, `/calls/${id}?secret=${encodeURIComponent(secret)}`, { method: "DELETE" }),
+  answerCall: (id: string) => request(AnswerCallResponse, `/calls/${id}/answer`, post()),
+  declineCall: (id: string) => request(NoContent, `/calls/${id}/decline`, post()),
 
   guestLink: (token: string) => request(GuestLinkInfo, `/guest/${token}`),
   guestJoin: (token: string, displayName: string, avatar?: AvatarRecipe | null) =>

@@ -15,6 +15,7 @@ import {
 } from "@vcr/protocol";
 import type { Services } from "../app";
 import { issueRealmTicket, requireRealm, requireSession } from "../auth";
+import type { Database } from "../db/client";
 import {
   contactGroupMembers,
   contactGroups,
@@ -33,6 +34,18 @@ import { sceneAssets } from "./rooms";
 const GUEST_LINK_TTL_MS = 12 * 60 * 60_000;
 
 type TokenParams = { Params: { token: string } };
+
+/** A guest link into a live session; it stops working when the session ends. */
+export async function newGuestLink(
+  db: Database,
+  sessionId: string,
+  createdBy: string,
+): Promise<GuestLinkResponse> {
+  const token = randomBytes(18).toString("base64url");
+  const expiresAt = new Date(Date.now() + GUEST_LINK_TTL_MS);
+  await db.insert(guestLinks).values({ token, sessionId, createdBy, expiresAt });
+  return { token, path: `/join/${token}`, expiresAt: expiresAt.toISOString() };
+}
 
 export function sessionRoutes(app: FastifyInstance, ctx: Services) {
   const { db, env, gatherings, storage } = ctx;
@@ -227,17 +240,8 @@ export function sessionRoutes(app: FastifyInstance, ctx: Services) {
     return reply.code(204).send();
   });
 
-  const createGuestLink = async (sessionId: string, createdBy: string) => {
-    const token = randomBytes(18).toString("base64url");
-    const expiresAt = new Date(Date.now() + GUEST_LINK_TTL_MS);
-    await db.insert(guestLinks).values({ token, sessionId, createdBy, expiresAt });
-    const response: GuestLinkResponse = {
-      token,
-      path: `/join/${token}`,
-      expiresAt: expiresAt.toISOString(),
-    };
-    return response;
-  };
+  const createGuestLink = (sessionId: string, createdBy: string) =>
+    newGuestLink(db, sessionId, createdBy);
 
   app.post<IdParams>("/sessions/:id/guest-links", auth, async (req, reply) => {
     const row = await hostedLive(req.params.id, me(req), reply);

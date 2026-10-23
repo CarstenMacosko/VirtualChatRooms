@@ -27,6 +27,26 @@ export function scannedRoomLayout(manifest: RoomManifest): RoomLayout {
 }
 
 /**
+ * Where someone appears: one of the room's spawn points (stable per person), spread around it so
+ * people don't appear inside each other. Scans only promise ~0.7 m of open floor around a spawn.
+ */
+export function spawnPointFor(id: string, layout: RoomLayout): { position: Vec3; yaw: number } {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+  const base = layout.spawnPoints[Math.abs(hash >> 9) % layout.spawnPoints.length]!;
+  const spread = layout === SAMPLE_ROOM_LAYOUT ? [0.8, 0.6] : [0.35, 0.35];
+  const angle = ((Math.abs(hash) % 360) * Math.PI) / 180;
+  return {
+    position: [
+      base.position[0] + Math.sin(angle) * spread[0]!,
+      base.position[1] + 0.05,
+      base.position[2] + Math.cos(angle) * spread[1]!,
+    ],
+    yaw: base.yaw,
+  };
+}
+
+/**
  * The manifest's file-to-world transform as a column-major 4×4 matrix (three.js `Matrix4`
  * layout): world = translation + metersPerUnit · rotation(file).
  */

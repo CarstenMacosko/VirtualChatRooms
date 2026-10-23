@@ -1,5 +1,6 @@
 // Service worker: shows incoming calls as notifications while the app is closed (Web Push).
-// Payloads are PushPayload from @vcr/protocol: { type: "ring", ... } or { type: "ring-cancelled" }.
+// Payloads are PushPayload from @vcr/protocol: rings from contacts ("ring", "ring-cancelled") and
+// calls through your call link ("call", "call-ended").
 
 self.addEventListener("push", (event) => {
   let data;
@@ -20,6 +21,22 @@ self.addEventListener("push", (event) => {
         data: { url: `/s/${data.sessionId}` },
         actions: [{ action: "answer", title: "Answer" }],
       }),
+    );
+  } else if (data.type === "call") {
+    event.waitUntil(
+      self.registration.showNotification(`${data.from.displayName} is calling`, {
+        body: "Through your call link. Open the app to answer.",
+        tag: data.callId,
+        renotify: true,
+        requireInteraction: true,
+        data: { url: "/" },
+      }),
+    );
+  } else if (data.type === "call-ended") {
+    event.waitUntil(
+      self.registration
+        .getNotifications({ tag: data.callId })
+        .then((list) => list.forEach((n) => n.close())),
     );
   } else if (data.type === "ring-cancelled") {
     // Answered on another device, declined, missed, or the gathering ended.

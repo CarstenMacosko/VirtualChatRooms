@@ -232,3 +232,55 @@ export const avatars = pgTable(
   // One avatar per person for now; the id leaves room for an outfit wardrobe later.
   (t) => [uniqueIndex("avatars_owner").on(t.ownerId)],
 );
+
+export const linkKind = pgEnum("link_kind", ["device", "invite", "call"]);
+
+/**
+ * Device sign-in, invite and "call me" links (`LinkKind` in @vcr/protocol). Tokens are the
+ * secret: whoever has the link can use it, so device links are single-use and short-lived.
+ */
+export const links = pgTable(
+  "links",
+  {
+    token: text("token").primaryKey(),
+    kind: linkKind("kind").notNull(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("links_owner_kind").on(t.ownerId, t.kind)],
+);
+
+export const callStatus = pgEnum("call_status", [
+  "ringing",
+  "accepted",
+  "declined",
+  "missed",
+  "cancelled",
+]);
+
+/** Someone calling through a call link. Nothing about the caller is kept beyond their name. */
+export const calls = pgTable(
+  "calls",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    linkToken: text("link_token")
+      .notNull()
+      .references(() => links.token, { onDelete: "cascade" }),
+    callerName: text("caller_name").notNull(),
+    /** Proves the caller is the one polling or hanging up. */
+    secret: text("secret").notNull(),
+    status: callStatus("status").notNull().default("ringing"),
+    sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
+    guestToken: text("guest_token"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("calls_owner_status").on(t.ownerId, t.status)],
+);

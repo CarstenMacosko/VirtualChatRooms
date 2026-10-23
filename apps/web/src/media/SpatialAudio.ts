@@ -10,7 +10,8 @@ import type { Vec3 } from "@vcr/engine";
  * your group to the background bus, whose level is the "how much of the room you hear" slider.
  *
  * The listener follows the camera and each panner follows that person's avatar head, both
- * updated every frame by the 3D world.
+ * updated every frame by the 3D world. In the video grid there's no room to place voices in, so
+ * the graph goes flat: everyone straight ahead at a normal distance.
  */
 
 /** Avatar head height above the feet, where voices come from. */
@@ -51,6 +52,8 @@ export class SpatialAudio {
     track: MediaStreamTrack;
   } | null = null;
   private samples = new Float32Array(256);
+  private flat = false;
+  private stateListeners = new Set<() => void>();
 
   constructor() {
     this.context = new AudioContext({ latencyHint: "interactive" });
@@ -67,6 +70,49 @@ export class SpatialAudio {
     };
     this.buses.conversation.connect(this.master);
     this.buses.background.connect(muffle);
+    // iOS suspends ("interrupts") audio when the microphone starts or a call comes in; the UI
+    // offers a tap to resume (see `needsUnlock`).
+    this.context.addEventListener("statechange", () => {
+      for (const listener of this.stateListeners) listener();
+    });
+  }
+
+  /** Whether sound is blocked until the next tap (autoplay rules, iOS interruptions). */
+  get needsUnlock() {
+    return this.context.state !== "running" && this.context.state !== "closed";
+  }
+
+  onStateChange(listener: () => void) {
+    this.stateListeners.add(listener);
+    return () => {
+      this.stateListeners.delete(listener);
+    };
+  }
+
+  /** Plays voices through a chosen output device, where the browser allows it (Chrome). */
+  async setOutputDevice(deviceId: string) {
+    const ctx = this.context as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+    if (ctx.setSinkId) await ctx.setSinkId(deviceId === "default" ? "" : deviceId);
+  }
+
+  static get canChooseOutput() {
+    return "setSinkId" in AudioContext.prototype;
+  }
+
+  get spatial() {
+    return !this.flat;
+  }
+
+  /** Flat (video grid) or spatial (3D room) voices. */
+  setSpatial(spatial: boolean) {
+    if (this.flat === !spatial) return;
+    this.flat = !spatial;
+    for (const [id, source] of this.sources) {
+      source.panner.panningModel = this.flat ? "equalpower" : "HRTF";
+      const at = this.positions.get(id);
+      this.placeSource(source, at ?? [0, 0, 0]);
+    }
+    if (this.flat) this.applyListener([0, 0, 0], [0, 0, -1]);
   }
 
   /** Must be called from a user gesture (the Join button) for audio to start in most browsers. */
@@ -91,7 +137,7 @@ export class SpatialAudio {
     const volume = this.context.createGain();
     volume.gain.value = this.volumes.get(id) ?? 1;
     const panner = new PannerNode(this.context, {
-      panningModel: "HRTF",
+      panningModel: this.flat ? "equalpower" : "HRTF",
       distanceModel: "inverse",
       refDistance: 1,
       rolloffFactor: 1.5,
@@ -107,8 +153,7 @@ export class SpatialAudio {
       panner.connect(sends[name]).connect(this.buses[name]);
     }
     this.sources.set(id, { element, node, meter, volume, panner, sends });
-    const at = this.positions.get(id);
-    if (at) this.placeSource(this.sources.get(id)!, at);
+    this.placeSource(this.sources.get(id)!, this.positions.get(id) ?? [0, 0, 0]);
   }
 
   removeTrack(id: string) {
@@ -179,8 +224,12 @@ export class SpatialAudio {
 
   /** Camera position and facing, once per frame. */
   setListener(position: Vec3, forward: Vec3) {
-    const l = this.context.listener;
     this.listener.position = position;
+    if (!this.flat) this.applyListener(position, forward);
+  }
+
+  private applyListener(position: Vec3, forward: Vec3) {
+    const l = this.context.listener;
     if (l.positionX) {
       const t = this.context.currentTime;
       l.positionX.setValueAtTime(position[0], t);
@@ -221,6 +270,13 @@ export class SpatialAudio {
   private placeSource(source: Source, feet: Vec3) {
     const p = source.panner;
     const t = this.context.currentTime;
+    if (this.flat) {
+      // One meter straight ahead of a listener at the origin: full volume, centered.
+      p.positionX.setValueAtTime(0, t);
+      p.positionY.setValueAtTime(0, t);
+      p.positionZ.setValueAtTime(-1, t);
+      return;
+    }
     p.positionX.setValueAtTime(feet[0], t);
     p.positionY.setValueAtTime(feet[1] + VOICE_HEIGHT, t);
     p.positionZ.setValueAtTime(feet[2], t);

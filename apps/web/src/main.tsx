@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { CLERK_PUBLISHABLE_KEY, ClerkBridge } from "./components/AccountSignIn";
 import "./styles.css";
+import "./ui.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

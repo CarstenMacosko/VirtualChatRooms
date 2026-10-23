@@ -13,10 +13,20 @@ const RingEvent = z.object({
   roomName: z.string(),
 });
 const RingCancelledEvent = z.object({ type: z.literal("ring-cancelled"), sessionId: z.string() });
+/** Someone without an account is calling you through your call link. */
+const CallEvent = z.object({
+  type: z.literal("call"),
+  callId: z.string(),
+  from: z.object({ displayName: z.string() }),
+});
+/** That call stopped ringing: answered on another device, declined, missed or hung up. */
+const CallEndedEvent = z.object({ type: z.literal("call-ended"), callId: z.string() });
 
 export const LiveEvent = z.discriminatedUnion("type", [
   RingEvent,
   RingCancelledEvent,
+  CallEvent,
+  CallEndedEvent,
   z.object({
     type: z.literal("invite-response"),
     sessionId: z.string(),
@@ -41,5 +51,10 @@ export const VapidKeyResponse = z.object({ publicKey: z.string().nullable() });
 export type VapidKeyResponse = z.infer<typeof VapidKeyResponse>;
 
 /** What a Web Push message carries to the service worker: a ring, or that it stopped ringing. */
-export const PushPayload = z.discriminatedUnion("type", [RingEvent, RingCancelledEvent]);
+export const PushPayload = z.discriminatedUnion("type", [
+  RingEvent,
+  RingCancelledEvent,
+  CallEvent,
+  CallEndedEvent,
+]);
 export type PushPayload = z.infer<typeof PushPayload>;

@@ -1,4 +1,5 @@
 import {
+  facingModeFromLocalTrack,
   type LocalVideoTrack,
   type Participant,
   type RemoteParticipant,
@@ -27,6 +28,15 @@ export interface MediaSnapshot {
   lastSpokeAt: ReadonlyMap<string, number>;
   /** Camera tracks by identity; yours is under your own id. */
   videos: ReadonlyMap<string, RemoteVideoTrack | LocalVideoTrack>;
+  /** Shared screens by identity; yours is under your own id. */
+  screens: ReadonlyMap<string, RemoteVideoTrack | LocalVideoTrack>;
+  screenSharing: boolean;
+}
+
+/** Chosen input devices (deviceId), or undefined for the browser's default. */
+export interface DeviceChoice {
+  mic?: string | undefined;
+  camera?: string | undefined;
 }
 
 const POSE_TOPIC = "pose";
@@ -49,6 +59,8 @@ export class MediaSession {
     speaking: new Set(),
     lastSpokeAt: new Map(),
     videos: new Map(),
+    screens: new Map(),
+    screenSharing: false,
   };
   private listeners = new Set<() => void>();
   private interestTimer: ReturnType<typeof setInterval> | undefined;
@@ -57,7 +69,10 @@ export class MediaSession {
   /** Called with each pose packet another participant publishes. */
   onPose: ((from: string, bytes: Uint8Array) => void) | null = null;
 
-  constructor(private audio: SpatialAudio) {
+  constructor(
+    private audio: SpatialAudio,
+    devices: DeviceChoice = {},
+  ) {
     this.room = new Room({
       adaptiveStream: true,
       dynacast: true,
@@ -67,9 +82,13 @@ export class MediaSession {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
+        ...(devices.mic && { deviceId: devices.mic }),
       },
-      // Capture at 720p for the pinned (large) view; small tiles take the 180p/360p layers.
-      videoCaptureDefaults: { resolution: VideoPresets.h720.resolution },
+      // Capture at 720p for big tiles; small tiles take the 180p/360p layers.
+      videoCaptureDefaults: {
+        resolution: VideoPresets.h720.resolution,
+        ...(devices.camera && { deviceId: devices.camera }),
+      },
       publishDefaults: {
         simulcast: true,
         videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
@@ -155,6 +174,42 @@ export class MediaSession {
     this.syncLocal();
   }
 
+  async setScreenShare(on: boolean) {
+    try {
+      await this.room.localParticipant.setScreenShareEnabled(on, { audio: false });
+    } catch (err) {
+      // Cancelling the browser's picker isn't an error worth showing.
+      if (!(err instanceof DOMException && err.name === "NotAllowedError")) {
+        this.update({ error: `Screen sharing: ${String(err)}` });
+      }
+    }
+    this.syncLocal();
+  }
+
+  /** Switches to another microphone or camera mid-call. */
+  async switchDevice(kind: "audioinput" | "videoinput", deviceId: string) {
+    try {
+      await this.room.switchActiveDevice(kind, deviceId);
+    } catch (err) {
+      this.update({ error: `Couldn't switch device: ${String(err)}` });
+    }
+    this.syncLocal();
+  }
+
+  /** Front ↔ back camera on phones. */
+  async flipCamera() {
+    const pub = this.room.localParticipant.getTrackPublication(Track.Source.Camera);
+    const track = pub?.videoTrack as LocalVideoTrack | undefined;
+    if (!track) return;
+    const facing = facingModeFromLocalTrack(track).facingMode;
+    try {
+      await track.restartTrack({ facingMode: facing === "environment" ? "user" : "environment" });
+    } catch (err) {
+      this.update({ error: `Couldn't flip the camera: ${String(err)}` });
+    }
+    this.syncLocal();
+  }
+
   /** Avatar pose over the lossy data channel: a dropped packet is replaced 66 ms later. */
   publishPose(bytes: Uint8Array) {
     if (!this.connected) return;
@@ -174,14 +229,16 @@ export class MediaSession {
     });
     r.on(RoomEvent.ParticipantConnected, (p) => this.subscribeCameras(p));
     r.on(RoomEvent.TrackPublished, (pub, p) => {
-      if (pub.source === Track.Source.Camera) pub.setSubscribed(true);
-      else if (pub.source === Track.Source.Microphone) this.refreshInterest(p.identity);
+      if (pub.source === Track.Source.Camera || pub.source === Track.Source.ScreenShare) {
+        pub.setSubscribed(true);
+      } else if (pub.source === Track.Source.Microphone) this.refreshInterest(p.identity);
     });
     r.on(RoomEvent.TrackSubscribed, (track, pub, p) => this.attach(track, pub, p));
     r.on(RoomEvent.TrackUnsubscribed, (track, pub, p) => this.detach(track, pub, p));
     r.on(RoomEvent.ParticipantDisconnected, (p) => {
       this.audio.removeTrack(p.identity);
       this.dropVideo(p.identity);
+      this.dropScreen(p.identity);
     });
     r.on(RoomEvent.LocalTrackPublished, () => this.syncLocal());
     r.on(RoomEvent.LocalTrackUnpublished, () => this.syncLocal());
@@ -201,7 +258,9 @@ export class MediaSession {
 
   private subscribeCameras(p: RemoteParticipant) {
     for (const pub of p.trackPublications.values()) {
-      if (pub.source === Track.Source.Camera) pub.setSubscribed(true);
+      if (pub.source === Track.Source.Camera || pub.source === Track.Source.ScreenShare) {
+        pub.setSubscribed(true);
+      }
     }
   }
 
@@ -218,7 +277,10 @@ export class MediaSession {
       };
     });
     const [lx, , lz] = this.audio.listener.position;
-    const audible = selectAudible({ x: lx, z: lz }, others);
+    // In the video grid there's no "near": everyone is in the conversation.
+    const audible = this.audio.spatial
+      ? selectAudible({ x: lx, z: lz }, others)
+      : new Set(others.map((o) => o.id));
     for (const p of this.room.remoteParticipants.values()) {
       if (onlyIdentity && p.identity !== onlyIdentity) continue;
       const pub = p.getTrackPublication(Track.Source.Microphone) as
@@ -236,12 +298,24 @@ export class MediaSession {
       const videos = new Map(this.snapshot.videos);
       videos.set(p.identity, track as RemoteVideoTrack);
       this.update({ videos });
+    } else if (pub.source === Track.Source.ScreenShare) {
+      const screens = new Map(this.snapshot.screens);
+      screens.set(p.identity, track as RemoteVideoTrack);
+      this.update({ screens });
     }
   }
 
   private detach(_track: RemoteTrack, pub: RemoteTrackPublication, p: RemoteParticipant) {
     if (pub.source === Track.Source.Microphone) this.audio.removeTrack(p.identity);
     else if (pub.source === Track.Source.Camera) this.dropVideo(p.identity);
+    else if (pub.source === Track.Source.ScreenShare) this.dropScreen(p.identity);
+  }
+
+  private dropScreen(identity: string) {
+    if (!this.snapshot.screens.has(identity)) return;
+    const screens = new Map(this.snapshot.screens);
+    screens.delete(identity);
+    this.update({ screens });
   }
 
   private dropVideo(identity: string) {
@@ -262,6 +336,17 @@ export class MediaSession {
     else videos.delete(lp.identity);
     const mic = lp.getTrackPublication(Track.Source.Microphone);
     this.audio.setLocalMic(mic && !mic.isMuted ? (mic.track?.mediaStreamTrack ?? null) : null);
-    this.update({ micOn: lp.isMicrophoneEnabled, cameraOn: lp.isCameraEnabled, videos });
+    const screen = lp.getTrackPublication(Track.Source.ScreenShare);
+    const screens = new Map(this.snapshot.screens);
+    const screenTrack = screen?.videoTrack as LocalVideoTrack | undefined;
+    if (screenTrack) screens.set(lp.identity, screenTrack);
+    else screens.delete(lp.identity);
+    this.update({
+      micOn: lp.isMicrophoneEnabled,
+      cameraOn: lp.isCameraEnabled,
+      screenSharing: lp.isScreenShareEnabled,
+      videos,
+      screens,
+    });
   }
 }

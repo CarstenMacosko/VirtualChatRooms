@@ -29,6 +29,7 @@ import {
   SAMPLE_ROOM_LAYOUT,
   sampleRoomColliders,
   scannedRoomLayout,
+  spawnPointFor,
   type Vec3,
 } from "@vcr/engine";
 import type { AvatarRecipe, ParticipantView, Quat, SceneAssets } from "@vcr/protocol";
@@ -244,22 +245,6 @@ async function loadColliders(scene: SceneAssets | null): Promise<Colliders> {
   };
 }
 
-function spawnFor(id: string, layout: RoomLayout) {
-  let hash = 0;
-  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
-  // Each person gets one of the room's spawn points, spread around it so people don't appear
-  // inside each other. Scans only promise ~0.7 m of open floor around a spawn point.
-  const base = layout.spawnPoints[Math.abs(hash >> 9) % layout.spawnPoints.length]!;
-  const spread = layout === SAMPLE_ROOM_LAYOUT ? [0.8, 0.6] : [0.35, 0.35];
-  const angle = ((Math.abs(hash) % 360) * Math.PI) / 180;
-  const position: Vec3 = [
-    base.position[0] + Math.sin(angle) * spread[0]!,
-    base.position[1] + 0.05,
-    base.position[2] + Math.cos(angle) * spread[1]!,
-  ];
-  return { position, yaw: base.yaw };
-}
-
 const pitchQuat = (pitch: number): Quat => [Math.sin(pitch / 2), 0, 0, Math.cos(pitch / 2)];
 
 const scratchQuat = new Quaternion();
@@ -302,7 +287,7 @@ function createSim(
   recipe: AvatarRecipe,
 ): Sim {
   colliders.add(physics);
-  const spawn = spawnFor(userId, colliders.layout);
+  const spawn = spawnPointFor(userId, colliders.layout);
   return {
     physics,
     layout: colliders.layout,

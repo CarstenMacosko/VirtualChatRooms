@@ -131,3 +131,30 @@ export async function removeContact(db: Database, userId: string, otherId: strin
     }
   });
 }
+
+/** Makes two people contacts straight away (an invite link both sides agreed to). */
+export async function befriend(db: Database, a: string, b: string) {
+  if (a === b) return;
+  // A block stays a block.
+  const blocked = await db
+    .select({ status: contacts.status })
+    .from(contacts)
+    .where(
+      and(
+        inArray(contacts.userId, [a, b]),
+        inArray(contacts.contactUserId, [a, b]),
+        eq(contacts.status, "blocked"),
+      ),
+    );
+  if (blocked.length) return;
+  await db
+    .insert(contacts)
+    .values([
+      { userId: a, contactUserId: b, status: "accepted" },
+      { userId: b, contactUserId: a, status: "accepted" },
+    ])
+    .onConflictDoUpdate({
+      target: [contacts.userId, contacts.contactUserId],
+      set: { status: "accepted" },
+    });
+}

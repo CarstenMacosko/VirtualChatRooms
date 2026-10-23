@@ -30,7 +30,7 @@ const UPLOAD_TTL_MS = 6 * 60 * 60_000;
 export const ASSET_URL_TTL_MS = 60 * 60_000;
 
 /** Everyone gets a sample room to start in, and it stays first in their list. */
-async function ensureSampleRoom(db: Database, ownerId: string) {
+export async function ensureSampleRoom(db: Database, ownerId: string) {
   const [sample] = await db
     .select({ id: rooms.id })
     .from(rooms)

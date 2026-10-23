@@ -24,21 +24,30 @@ const toPublicUser = (row: typeof users.$inferSelect): PublicUser => ({
   createdAt: row.createdAt.toISOString(),
 });
 
-const ageMessage = `You must be ${MIN_ACCOUNT_AGE} or older to create an account. Younger family members can join a gathering with a guest link from a parent.`;
+export const ageMessage = `You must be ${MIN_ACCOUNT_AGE} or older to create an account. Younger family members can join a gathering with a guest link from a parent.`;
+
+/**
+ * Our session token for a user row: the one credential every service accepts. Sessions that
+ * can't be renewed by a sign-in provider (device and invite links) last longer.
+ */
+export async function signedInAs(
+  ctx: Pick<Services, "db" | "env">,
+  row: typeof users.$inferSelect,
+  ttl = "12h",
+): Promise<DevLoginResponse> {
+  await ensureFriendCode(ctx.db, row.id);
+  const user = toPublicUser(row);
+  const token = await issueSessionToken(
+    { sub: user.id, name: user.displayName, kind: "user" },
+    ctx.env.SESSION_TOKEN_SECRET,
+    ttl,
+  );
+  return { token, user };
+}
 
 export function authRoutes(app: FastifyInstance, ctx: Services) {
   const { db, env, identity } = ctx;
-
-  /** Our session token for a user row: the one credential every service accepts. */
-  const signedIn = async (row: typeof users.$inferSelect): Promise<DevLoginResponse> => {
-    await ensureFriendCode(db, row.id);
-    const user = toPublicUser(row);
-    const token = await issueSessionToken(
-      { sub: user.id, name: user.displayName, kind: "user" },
-      env.SESSION_TOKEN_SECRET,
-    );
-    return { token, user };
-  };
+  const signedIn = (row: typeof users.$inferSelect) => signedInAs(ctx, row);
 
   /** The 13+ age gate (PLAN.md § 10). The birth date itself is never stored. */
   const tooYoung = (birthDate: string, reply: FastifyReply) => {

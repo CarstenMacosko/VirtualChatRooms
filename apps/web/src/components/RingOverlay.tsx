@@ -1,10 +1,12 @@
-import { useEffect, useRef } from "react";
-import { api } from "../lib/api";
+import { Phone, PhoneOff, Video } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { api, ApiRequestError } from "../lib/api";
 import { useLive } from "../lib/live";
 import { navigate } from "../lib/router";
+import { Avatar } from "./ui";
 
-/** A soft two-note chime every two seconds while a call is ringing. */
-function useChime(active: boolean) {
+/** A soft two-note ringtone every two seconds while a call is ringing. */
+function useRingtone(active: boolean) {
   useEffect(() => {
     if (!active) return;
     let context: AudioContext;
@@ -14,6 +16,7 @@ function useChime(active: boolean) {
       return;
     }
     const play = () => {
+      if (context.state === "suspended") void context.resume().catch(() => {});
       const t = context.currentTime;
       for (const [i, freq] of [660, 880].entries()) {
         const osc = context.createOscillator();
@@ -38,35 +41,78 @@ function useChime(active: boolean) {
 
 const RESPONSE_COPY = {
   accepted: "joined",
-  declined: "can't make it",
+  declined: "can't make it right now",
   missed: "missed your call",
   ringing: "is being rung",
 } as const;
 
-/** Incoming calls and answers to your calls, on every screen while signed in. */
+interface Incoming {
+  key: string;
+  name: string;
+  detail: string;
+  answer(): Promise<void>;
+  decline(): void;
+}
+
+/** Incoming calls (contacts ringing you, people using your call link), on every screen. */
 export function RingOverlay() {
   const rings = useLive((s) => s.rings);
+  const calls = useLive((s) => s.calls);
   const responses = useLive((s) => s.responses);
   const dismissRing = useLive((s) => s.dismissRing);
+  const dismissCall = useLive((s) => s.dismissCall);
   const dismissResponse = useLive((s) => s.dismissResponse);
-  const ring = rings.at(-1);
   const notified = useRef(new Set<string>());
-  useChime(ring !== undefined);
+  const [error, setError] = useState<string | null>(null);
+
+  const ring = rings.at(-1);
+  const call = calls.at(-1);
+  const incoming: Incoming | null = call
+    ? {
+        key: call.callId,
+        name: call.from.displayName,
+        detail: "Calling you through your call link",
+        answer: async () => {
+          const { sessionId } = await api.answerCall(call.callId);
+          dismissCall(call.callId);
+          navigate(`/s/${sessionId}`);
+        },
+        decline: () => {
+          dismissCall(call.callId);
+          void api.declineCall(call.callId).catch(() => {});
+        },
+      }
+    : ring
+      ? {
+          key: ring.sessionId,
+          name: ring.from.displayName,
+          detail: `Video call · ${ring.roomName}`,
+          answer: async () => {
+            dismissRing(ring.sessionId);
+            navigate(`/s/${ring.sessionId}`);
+          },
+          decline: () => {
+            dismissRing(ring.sessionId);
+            void api.declineSession(ring.sessionId).catch(() => {});
+          },
+        }
+      : null;
+  useRingtone(incoming !== null);
 
   // A system notification when the tab is in the background (if the user allowed it).
+  const key = incoming?.key;
+  const name = incoming?.name;
+  const detail = incoming?.detail;
   useEffect(() => {
-    if (!ring || notified.current.has(ring.sessionId) || !document.hidden) return;
+    if (!key || notified.current.has(key) || !document.hidden) return;
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    notified.current.add(ring.sessionId);
-    const n = new Notification(`${ring.from.displayName} is calling`, {
-      body: `Join them in ${ring.roomName}`,
-      tag: ring.sessionId,
-    });
+    notified.current.add(key);
+    const n = new Notification(`${name} is calling`, { body: detail, tag: key });
     n.onclick = () => {
       window.focus();
       n.close();
     };
-  }, [ring]);
+  }, [key, name, detail]);
 
   // Answer toasts fade after a few seconds.
   useEffect(() => {
@@ -77,34 +123,49 @@ export function RingOverlay() {
 
   return (
     <>
-      {ring && (
-        <div className="ring" role="alertdialog" aria-label="Incoming call">
-          <div className="ring-avatar" aria-hidden>
-            {ring.from.displayName.slice(0, 1).toUpperCase()}
-          </div>
-          <div>
-            <b>{ring.from.displayName}</b> is calling
-            <div className="muted">Join them in {ring.roomName}</div>
-          </div>
-          <div className="row">
-            <button
-              className="danger"
-              onClick={() => {
-                dismissRing(ring.sessionId);
-                void api.declineSession(ring.sessionId).catch(() => {});
-              }}
-            >
-              Decline
-            </button>
-            <button
-              className="accept"
-              onClick={() => {
-                dismissRing(ring.sessionId);
-                navigate(`/s/${ring.sessionId}`);
-              }}
-            >
-              Answer
-            </button>
+      {incoming && (
+        <div className="incoming" role="alertdialog" aria-label={`${incoming.name} is calling`}>
+          <div className="incoming-card">
+            <div className="incoming-avatar">
+              <Avatar name={incoming.name} id={incoming.name} size={88} />
+            </div>
+            <h2>{incoming.name}</h2>
+            <p className="incoming-detail">
+              <Video size={16} /> {incoming.detail}
+            </p>
+            {error && <p className="error">{error}</p>}
+            <div className="incoming-actions">
+              <span>
+                <button
+                  className="round hangup big"
+                  onClick={() => {
+                    setError(null);
+                    incoming.decline();
+                  }}
+                  aria-label="Decline"
+                >
+                  <PhoneOff size={28} />
+                </button>
+                Decline
+              </span>
+              <span>
+                <button
+                  className="round accept big"
+                  onClick={() => {
+                    setError(null);
+                    incoming.answer().catch((err: unknown) => {
+                      setError(
+                        err instanceof ApiRequestError ? err.message : "Couldn't answer the call.",
+                      );
+                    });
+                  }}
+                  aria-label="Answer"
+                >
+                  <Phone size={28} />
+                </button>
+                Answer
+              </span>
+            </div>
           </div>
         </div>
       )}

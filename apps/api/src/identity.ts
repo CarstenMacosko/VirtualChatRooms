@@ -55,8 +55,15 @@ const SHARE_ORIGIN = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
  */
 export function isAllowedParty(azp: unknown, env: Pick<Env, "WEB_ORIGIN" | "NODE_ENV">): boolean {
   if (azp === undefined) return true; // tokens minted server-side carry no origin
-  if (azp === env.WEB_ORIGIN) return true;
+  if (typeof azp === "string" && webOrigins(env).includes(azp)) return true;
   return env.NODE_ENV !== "production" && typeof azp === "string" && SHARE_ORIGIN.test(azp);
+}
+
+/** `WEB_ORIGIN` as a list. */
+export function webOrigins(env: Pick<Env, "WEB_ORIGIN">): string[] {
+  return env.WEB_ORIGIN.split(",")
+    .map((o) => o.trim().replace(/\/$/, ""))
+    .filter(Boolean);
 }
 
 export function identityFromEnv(env: Env): IdentityProvider | null {

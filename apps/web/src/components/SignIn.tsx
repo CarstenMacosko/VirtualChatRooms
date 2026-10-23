@@ -3,6 +3,7 @@ import { MIN_ACCOUNT_AGE } from "@vcr/protocol";
 import { api, ApiRequestError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { viewingShared } from "../lib/share";
+import { Landing } from "./Landing";
 
 export function SignIn() {
   const signIn = useAuth((s) => s.signIn);
@@ -26,20 +27,34 @@ export function SignIn() {
     }
   }
 
+  // Production servers have no name-only sign-in: people arrive with a link instead.
+  if (import.meta.env.PROD) {
+    return (
+      <Landing>
+        <div className="card">
+          <h2>Welcome</h2>
+          <p className="muted">
+            Open the link you were sent: an invite, a call link, or a sign-in link from your own
+            computer. It signs you in or puts you straight into the call.
+          </p>
+        </div>
+      </Landing>
+    );
+  }
+
   return (
-    <main className="signin">
+    <Landing>
       <form className="card" onSubmit={onSubmit}>
-        <h1>VirtualChatRooms</h1>
-        <p className="muted">Hang out with friends and family as 3D avatars.</p>
+        <h2>Sign in</h2>
         {viewingShared() && (
           <p className="callout">
-            This is a preview someone is sharing from their computer. To join their gathering, open
-            the guest link they sent you. Signing in here only works on their computer.
+            This is a preview someone is sharing from their computer. To join their call, open the
+            link they sent you. Signing in here only works on their computer.
           </p>
         )}
-        <p>
-          <b>New here?</b> Enter your name and birthday to create your account. Use the same name
-          later to sign back in.
+        <p className="muted">
+          New here? Enter your name and birthday to create your account. Use the same name later to
+          sign back in.
         </p>
 
         <label>
@@ -50,6 +65,7 @@ export function SignIn() {
             maxLength={40}
             required
             autoFocus
+            autoComplete="name"
           />
         </label>
         <label>
@@ -70,14 +86,14 @@ export function SignIn() {
             {error}
           </p>
         )}
-        <button type="submit" disabled={busy}>
-          {busy ? "One moment…" : "Create account or sign in"}
+        <button type="submit" className="primary big" disabled={busy}>
+          {busy ? "One moment…" : "Continue"}
         </button>
         <p className="hint">
-          Development sign-in: no password yet. Real accounts (email or Google sign-in) replace this
-          before launch.
+          Development sign-in, with no password. Real accounts (email or Google) take over once
+          Clerk keys are set.
         </p>
       </form>
-    </main>
+    </Landing>
   );
 }

@@ -25,7 +25,18 @@ const Env = z.object({
     .string()
     .optional()
     .transform((v) => v === "1" || v === "true"),
+  /**
+   * Where the web app is served from. Comma-separated for several (e.g. the Cloudflare Pages
+   * site and the Fly.io address); the first is the main one.
+   */
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
+  /**
+   * Production, one origin: serve the built web app (apps/web/dist) from here, with the API under
+   * /api and the realm forwarded at /realm. Empty in development, where Vite does this.
+   */
+  WEB_DIST_DIR: z.string().default(""),
+  /** Where to forward /realm (HTTP and WebSockets) when serving the web app, e.g. http://127.0.0.1:2567. */
+  REALM_PROXY_URL: z.string().default(""),
   /** Web Push (calls while the app is closed). Empty disables push; `pnpm dev` generates a pair. */
   VAPID_PUBLIC_KEY: z.string().default(""),
   VAPID_PRIVATE_KEY: z.string().default(""),
@@ -42,6 +53,11 @@ const Env = z.object({
     .string()
     .optional()
     .transform((v) => v !== "0" && v !== "false"),
+  /**
+   * Lets whoever holds it make sign-in links from the command line (`POST /admin/sign-in-link`),
+   * e.g. to sign in on a deployed server before real accounts (Clerk) are set up. Empty: off.
+   */
+  ADMIN_TOKEN: z.string().default(""),
   /** KIRI Engine (video → room). Without it, only importing existing scans works. */
   KIRI_API_KEY: z.string().default(""),
 });

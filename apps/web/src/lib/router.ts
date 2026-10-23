@@ -5,7 +5,11 @@ export type Route =
   | { name: "home" }
   | { name: "avatar" }
   | { name: "session"; id: string }
-  | { name: "guest"; token: string };
+  | { name: "guest"; token: string }
+  /** Links from another device or person (`LinkKind` in @vcr/protocol). */
+  | { name: "device-link"; token: string }
+  | { name: "invite"; token: string }
+  | { name: "call-me"; token: string };
 
 export function parseRoute(pathname: string): Route {
   if (/^\/avatar\/?$/.test(pathname)) return { name: "avatar" };
@@ -13,6 +17,13 @@ export function parseRoute(pathname: string): Route {
   if (session) return { name: "session", id: session[1]! };
   const guest = /^\/join\/([a-zA-Z0-9_-]{8,64})\/?$/.exec(pathname);
   if (guest) return { name: "guest", token: guest[1]! };
+  const link = /^\/(link|invite|call)\/([a-zA-Z0-9_-]{8,64})\/?$/.exec(pathname);
+  if (link) {
+    const name = ({ link: "device-link", invite: "invite", call: "call-me" } as const)[
+      link[1] as "link" | "invite" | "call"
+    ];
+    return { name, token: link[2]! };
+  }
   return { name: "home" };
 }
 

@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/.turbo
+**/.data
+.env
+.env.*
+!.env.example
+.git
+.claude
+.share-url
+coverage
