@@ -1,11 +1,17 @@
 import { z } from "zod";
-import { RoomManifest, ScaleSource, SplatFormat } from "./manifest";
+import { RoomManifest, ScaleSource } from "./manifest";
 
 /**
  * Rooms and room capture (PLAN.md § 4.1). Phase 4's first slice imports a scan people already
- * made (Scaniverse, Polycam or the KIRI app, exported as a `.ply` or `.spz` Gaussian splat);
- * turning a recorded video into a room goes through a capture provider (KIRI Engine) later.
+ * made (Scaniverse, Polycam or the KIRI app, exported as a `.ply` or `.spz` Gaussian splat, or a
+ * textured `.glb` mesh); turning a recorded video into a room goes through a capture provider
+ * (KIRI Engine) later.
  */
+
+/** Files people can upload as a room: splats (or point clouds) and textured meshes. */
+export const ScanFormat = z.enum(["ply", "spz", "glb"]);
+export type ScanFormat = z.infer<typeof ScanFormat>;
+export const SCAN_FILE_PATTERN = /\.(ply|spz|glb)$/i;
 
 export const RoomKind = z.enum(["sample", "scan"]);
 export type RoomKind = z.infer<typeof RoomKind>;
@@ -27,8 +33,13 @@ export type UpAxis = z.infer<typeof UpAxis>;
 
 /** What post-processing found in a scan, for the owner's room list. */
 export const ScanDetails = z.object({
-  format: SplatFormat,
+  format: ScanFormat,
+  /** The upload was a plain point cloud, turned into splats when it was processed. */
+  pointCloud: z.boolean().optional(),
+  /** Splats in the room (0 for a mesh). */
   splats: z.number().int().nonnegative(),
+  /** A mesh room's triangles. */
+  triangles: z.number().int().nonnegative().optional(),
   /** Walkable floor's width and depth, and the room's height, in meters. */
   size: z.object({ width: z.number(), depth: z.number(), height: z.number() }),
   scaleSource: ScaleSource,
@@ -61,7 +72,7 @@ export const MAX_SCAN_ROOMS = 10;
 /** What this server can do with captures: imports always work; video needs a provider key. */
 export const CaptureOptions = z.object({
   maxScanBytes: z.number().int().positive(),
-  formats: z.array(SplatFormat),
+  formats: z.array(ScanFormat),
   video: z.object({ available: z.boolean(), reason: z.string().nullable() }),
 });
 export type CaptureOptions = z.infer<typeof CaptureOptions>;
@@ -75,7 +86,7 @@ export const CreateScanRequest = z.object({
     .string()
     .min(1)
     .max(255)
-    .regex(/\.(ply|spz)$/i, "Choose a .ply or .spz file exported from your scanning app."),
+    .regex(SCAN_FILE_PATTERN, "Choose a .ply, .spz or .glb file exported from your scanning app."),
   size: z
     .number()
     .int()

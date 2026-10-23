@@ -21,9 +21,19 @@ import {
   type RoomAnalysis,
 } from "../src/capture/analyze";
 import { readCollisionGlb, writeCollisionGlb } from "../src/capture/glb";
+import { MeshFileError, readGlbMesh, sampleSurface } from "../src/capture/meshFile";
 import { processScan, rescaleRoom, roomKeys, ScanRejectedError } from "../src/capture/pipeline";
 import { KiriProvider } from "../src/capture/providers";
-import { readSplatPoints, SplatFileError, writePly, writeSpz } from "../src/capture/splatFile";
+import {
+  isPointCloudPly,
+  readPointCloud,
+  readSplatPoints,
+  SplatFileError,
+  writePly,
+  writePointCloudPly,
+  writeSpz,
+} from "../src/capture/splatFile";
+import { eigenSym3, pointCloudToSplats } from "../src/capture/surfels";
 import { FsStorage } from "../src/storage";
 import { type FileFrame, quatAxisAngle, syntheticRoomSplats, toFile } from "./syntheticRoom";
 
@@ -123,6 +133,210 @@ describe("splat files", () => {
     ).rejects.toThrow(/ascii/);
     await expect(read(Buffer.from("not gzip at all"), "spz")).rejects.toThrow(SplatFileError);
     await expect(read(writePly(splats), "ply", { maxSplats: 10 })).rejects.toThrow(/up to 10/);
+  });
+});
+
+describe("point clouds", () => {
+  /** A flat 1 m square of points `spacing` apart, tilted 30° about x, in a checker of two colors. */
+  function tiltedSquare(spacing: number) {
+    const tilt = quatAxisAngle([1, 0, 0], Math.PI / 6);
+    const points: Array<{ position: Vec3; color: Vec3 }> = [];
+    for (let u = 0; u <= 1; u += spacing) {
+      for (let v = 0; v <= 1; v += spacing) {
+        const dark = (Math.round(u / spacing) + Math.round(v / spacing)) % 2 === 0;
+        points.push({
+          position: qrotate(tilt, [u, v, 0]),
+          color: dark ? [0.2, 0.3, 0.4] : [1, 1, 1],
+        });
+      }
+    }
+    return { points, normal: qrotate(tilt, [0, 0, 1]) };
+  }
+
+  it("tells point clouds from splats by their header", () => {
+    const { points } = tiltedSquare(0.1);
+    expect(isPointCloudPly(writePointCloudPly(points))).toBe(true);
+    expect(isPointCloudPly(writePly(syntheticRoomSplats({ spacing: 0.3 })))).toBe(false);
+    expect(isPointCloudPly(Buffer.from("not a ply"))).toBe(false);
+  });
+
+  it("reads positions and colors", async () => {
+    const { points } = tiltedSquare(0.1);
+    const cloud = await readPointCloud(Readable.from([writePointCloudPly(points)]));
+    expect(cloud.count).toBe(points.length);
+    for (const i of [0, 7, points.length - 1]) {
+      for (let a = 0; a < 3; a++) {
+        expect(cloud.positions[i * 3 + a]).toBeCloseTo(points[i]!.position[a]!, 5);
+        expect(cloud.colors[i * 3 + a]).toBe(Math.round(points[i]!.color[a]! * 255));
+      }
+    }
+  });
+
+  it("decomposes symmetric matrices", () => {
+    const m = new Float64Array([4, 1, -2, 1, 3, 0.5, -2, 0.5, 1]);
+    const original = Float64Array.from(m);
+    const v = new Float64Array(9);
+    const order = eigenSym3(m, v);
+    expect(m[order[0] * 4]).toBeGreaterThanOrEqual(m[order[1] * 4]!);
+    expect(m[order[1] * 4]).toBeGreaterThanOrEqual(m[order[2] * 4]!);
+    for (let c = 0; c < 3; c++) {
+      const vec = [v[c]!, v[3 + c]!, v[6 + c]!];
+      for (let r = 0; r < 3; r++) {
+        const mv =
+          original[r * 3]! * vec[0]! +
+          original[r * 3 + 1]! * vec[1]! +
+          original[r * 3 + 2]! * vec[2]!;
+        expect(mv).toBeCloseTo(m[c * 4]! * vec[r]!, 9);
+      }
+    }
+  });
+
+  it("turns points into discs lying in the surface, as wide as the gaps", async () => {
+    const spacing = 0.02;
+    const { points, normal } = tiltedSquare(spacing);
+    const cloud = await readPointCloud(Readable.from([writePointCloudPly(points)]));
+    const splats = await pointCloudToSplats(cloud);
+    expect(splats.count).toBe(points.length);
+    expect(splats.colors).toBe(cloud.colors);
+    // A point in the middle of the square.
+    const i = points.findIndex(
+      (p) => Math.hypot(p.position[0] - 0.5, p.position[1] - 0.433) < 0.011,
+    );
+    const [s1, s2, s3] = splats.scales.subarray(i * 3, i * 3 + 3);
+    expect(s1).toBeGreaterThan(0.5 * spacing);
+    expect(s1).toBeLessThan(1.5 * spacing);
+    expect(s2).toBeGreaterThan(0.5 * spacing);
+    expect(s3).toBeLessThan(0.25 * s2!);
+    // The disc's thin axis (its local z) is the surface normal.
+    const q = Array.from(splats.rotations.subarray(i * 4, i * 4 + 4)) as [
+      number,
+      number,
+      number,
+      number,
+    ];
+    const axis = qrotate(q, [0, 0, 1]);
+    expect(Math.abs(axis[0] * normal[0] + axis[1] * normal[1] + axis[2] * normal[2])).toBeCloseTo(
+      1,
+      3,
+    );
+  });
+});
+
+/** A GLB (as the collision writer makes them) with its glTF JSON edited, e.g. to move the node. */
+function editGlb(glb: Buffer, edit: (json: Record<string, any>) => void): Buffer {
+  const jsonLength = glb.readUInt32LE(12);
+  const json = JSON.parse(glb.subarray(20, 20 + jsonLength).toString("utf8"));
+  edit(json);
+  let text = Buffer.from(JSON.stringify(json));
+  text = Buffer.concat([text, Buffer.alloc((4 - (text.length % 4)) % 4, 0x20)]);
+  const rest = glb.subarray(20 + jsonLength);
+  const head = Buffer.alloc(20);
+  head.writeUInt32LE(0x46546c67, 0);
+  head.writeUInt32LE(2, 4);
+  head.writeUInt32LE(20 + text.length + rest.length, 8);
+  head.writeUInt32LE(text.length, 12);
+  head.writeUInt32LE(0x4e4f534a, 16);
+  return Buffer.concat([head, text, rest]);
+}
+
+/** A bare `w` × `d` × `h` m box room (floor, walls, ceiling; Y up) as big triangles. */
+function boxRoomMesh(w: number, d: number, h: number) {
+  const x = w / 2;
+  const z = d / 2;
+  const quads: Vec3[][] = [
+    [
+      [-x, 0, -z],
+      [x, 0, -z],
+      [x, 0, z],
+      [-x, 0, z],
+    ],
+    [
+      [-x, h, -z],
+      [-x, h, z],
+      [x, h, z],
+      [x, h, -z],
+    ],
+    [
+      [-x, 0, -z],
+      [-x, h, -z],
+      [x, h, -z],
+      [x, 0, -z],
+    ],
+    [
+      [-x, 0, z],
+      [x, 0, z],
+      [x, h, z],
+      [-x, h, z],
+    ],
+    [
+      [-x, 0, -z],
+      [-x, 0, z],
+      [-x, h, z],
+      [-x, h, -z],
+    ],
+    [
+      [x, 0, -z],
+      [x, h, -z],
+      [x, h, z],
+      [x, 0, z],
+    ],
+  ];
+  // A table, so the floor isn't the only thing in the room.
+  const box = (c: Vec3, e: Vec3) => {
+    const p = (sx: number, sy: number, sz: number): Vec3 => [
+      c[0] + sx * e[0],
+      c[1] + sy * e[1],
+      c[2] + sz * e[2],
+    ];
+    quads.push([p(-1, 1, -1), p(-1, 1, 1), p(1, 1, 1), p(1, 1, -1)]);
+    quads.push([p(-1, -1, -1), p(-1, 1, -1), p(1, 1, -1), p(1, -1, -1)]);
+    quads.push([p(-1, -1, 1), p(1, -1, 1), p(1, 1, 1), p(-1, 1, 1)]);
+  };
+  box([0.5, 0.375, 0.5], [0.6, 0.375, 0.4]);
+  const positions = new Float32Array(quads.flat().flat());
+  const indices = new Uint32Array(
+    quads.flatMap((_, q) => [0, 1, 2, 0, 2, 3].map((k) => q * 4 + k)),
+  );
+  return { positions, indices };
+}
+
+describe("mesh files", () => {
+  it("reads triangles with the nodes' transforms applied", () => {
+    const glb = editGlb(
+      writeCollisionGlb(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), new Uint32Array([0, 1, 2])),
+      (json) => {
+        // Half a turn about Z, doubled, moved up 3 — under a parent moved along x.
+        json.nodes = [
+          { children: [1], translation: [10, 0, 0] },
+          { mesh: 0, rotation: [0, 0, 1, 0], scale: [2, 2, 2], translation: [0, 3, 0] },
+        ];
+      },
+    );
+    const mesh = readGlbMesh(glb);
+    expect(Array.from(mesh.indices)).toEqual([0, 1, 2]);
+    const expected = [10, 3, 0, 8, 3, 0, 10, 1, 0];
+    expected.forEach((v, i) => expect(mesh.positions[i]).toBeCloseTo(v, 5));
+  });
+
+  it("samples the surface by area, not by corner", () => {
+    // A 1 × 1 triangle at x < 0 and a 3 × 1 one at x > 0.
+    const mesh = {
+      positions: new Float32Array([-1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0]),
+      indices: new Uint32Array([0, 1, 2, 3, 4, 5]),
+    };
+    const points = sampleSurface(mesh, 10_000);
+    let right = 0;
+    for (let i = 0; i < points.count; i++) if (points.positions[i * 3]! > 0) right++;
+    expect(right / points.count).toBeCloseTo(0.75, 2);
+  });
+
+  it("rejects compressed meshes and files that aren't GLB", () => {
+    const { positions, indices } = boxRoomMesh(4, 5, 2.6);
+    const draco = editGlb(writeCollisionGlb(positions, indices), (json) => {
+      json.extensionsRequired = ["KHR_draco_mesh_compression"];
+    });
+    expect(() => readGlbMesh(draco)).toThrow(/without compression/);
+    expect(() => readGlbMesh(Buffer.from("definitely not a glb file"))).toThrow(MeshFileError);
   });
 });
 
@@ -334,6 +548,44 @@ describe("pipeline", () => {
     const a = collisionToWorld(glb.positions.subarray(0, 3), first.manifest.transform);
     const b = collisionToWorld(glb.positions.subarray(0, 3), scaled.manifest.transform);
     for (let i = 0; i < 3; i++) expect(b[i]).toBeCloseTo(a[i]! * k, 4);
+  });
+
+  it("turns an uploaded point cloud into splats and serves those", async () => {
+    const storage = fresh();
+    const room = syntheticRoomSplats({ spacing: 0.08 });
+    await storage.put(roomKeys("rm_4").source("ply"), writePointCloudPly(room), "x");
+    const result = await processScan(storage, "rm_4", "ply");
+    expect(result.manifest.splat).toMatchObject({
+      key: roomKeys("rm_4").converted,
+      format: "spz",
+      count: room.length,
+    });
+    expect(result.details).toMatchObject({ format: "ply", pointCloud: true, up: "+y" });
+    const served = await read(await storage.get(result.manifest.splat!.key), "spz");
+    expect(served.count).toBe(room.length);
+    expect(served.positions[0]).toBeCloseTo(room[0]!.position[0], 2);
+  });
+
+  it("serves a textured mesh as uploaded, analyzed from its surface", async () => {
+    const storage = fresh();
+    const { positions, indices } = boxRoomMesh(4, 5, 2.6);
+    // Exported Z-up, as some apps do.
+    const glb = editGlb(writeCollisionGlb(positions, indices), (json) => {
+      json.nodes[0].rotation = quatAxisAngle([1, 0, 0], Math.PI / 2);
+    });
+    await storage.put(roomKeys("rm_5").source("glb"), glb, "x");
+    const result = await processScan(storage, "rm_5", "glb");
+    expect(result.manifest.splat).toBeNull();
+    expect(result.manifest.mesh).toEqual({
+      key: "rooms/rm_5/scan.glb",
+      triangles: indices.length / 3,
+      format: "glb",
+    });
+    expect(result.details).toMatchObject({ format: "glb", splats: 0, up: "+z" });
+    expect(result.details.triangles).toBe(indices.length / 3);
+    expect(result.details.size.height).toBeCloseTo(2.6, 1);
+    expect(Math.max(result.details.size.width, result.details.size.depth)).toBeCloseTo(5, 0);
+    expect(await storage.get(result.manifest.mesh!.key)).toEqual(glb);
   });
 
   it("rejects a file that isn't the format its name says", async () => {

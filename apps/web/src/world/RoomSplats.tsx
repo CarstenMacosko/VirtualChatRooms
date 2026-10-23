@@ -25,8 +25,9 @@ export function RoomSplats(props: {
   const { spacing, scene, onState } = props;
 
   const mesh = useMemo(() => {
-    if (scene) {
-      const { splat, transform } = scene.manifest;
+    const splat = scene?.manifest.splat;
+    if (scene && splat) {
+      const { transform } = scene.manifest;
       const url = scene.urls[splat.key];
       const scanned = new SplatMesh({
         url: url ? assetUrl(url) : "",

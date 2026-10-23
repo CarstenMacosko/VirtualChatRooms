@@ -225,8 +225,8 @@ describe("room scans", () => {
     );
     const scene = joined.scene!;
     expect(scene.manifest.roomId).toBe(ready.id);
-    expect(scene.manifest.splat.format).toBe("ply");
-    const splatUrl = scene.urls[scene.manifest.splat.key]!;
+    expect(scene.manifest.splat!.format).toBe("ply");
+    const splatUrl = scene.urls[scene.manifest.splat!.key]!;
     const collisionUrl = scene.urls[scene.manifest.collision.key]!;
     expect(splatUrl).toMatch(/^\/storage\/o\/rooms\/.+\/scan\.ply\?/);
 

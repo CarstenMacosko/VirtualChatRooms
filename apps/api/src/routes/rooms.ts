@@ -11,6 +11,7 @@ import {
   type RoomInfo,
   type RoomsResponse,
   ScanDetails,
+  ScanFormat,
   type SceneAssets,
   UPLOAD_PART_BYTES,
   UpdateRoomRequest,
@@ -60,8 +61,8 @@ export async function sceneAssets(
   );
   const expiresAt = new Date(Date.now() + ASSET_URL_TTL_MS);
   const keys = [
-    manifest.splat.key,
-    ...manifest.splat.lods.map((l) => l.key),
+    ...(manifest.splat ? [manifest.splat.key, ...manifest.splat.lods.map((l) => l.key)] : []),
+    ...(manifest.mesh ? [manifest.mesh.key] : []),
     manifest.collision.key,
   ];
   const urls: Record<string, string> = {};
@@ -107,7 +108,7 @@ export function roomRoutes(app: FastifyInstance, ctx: Services) {
       rooms: owned.map(roomInfo),
       capture: {
         maxScanBytes: MAX_SCAN_BYTES,
-        formats: ["ply", "spz"],
+        formats: ["ply", "spz", "glb"],
         video: captures.kiri.availability(),
       },
     };
@@ -129,7 +130,7 @@ export function roomRoutes(app: FastifyInstance, ctx: Services) {
         `You can have up to ${MAX_SCAN_ROOMS} scanned rooms. Delete one to add another.`,
       );
     }
-    const format = body.fileName.toLowerCase().endsWith(".ply") ? "ply" : "spz";
+    const format = ScanFormat.parse(body.fileName.toLowerCase().split(".").pop());
     const roomId = `rm_${randomUUID()}`;
     const sourceKey = roomKeys(roomId).source(format);
     const { uploadId } = await storage.createUpload(sourceKey, "application/octet-stream");

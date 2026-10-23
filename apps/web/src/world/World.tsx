@@ -41,6 +41,7 @@ import type { TrackedFace } from "../media/FaceTracker";
 import { LOCAL_VOICE, type SpatialAudio } from "../media/SpatialAudio";
 import { AVATAR_LAYER, AvatarInstance } from "./AvatarInstance";
 import { headshotTargets } from "./headshots";
+import { RoomMesh } from "./RoomMesh";
 import { type RoomLoadState, RoomSplats } from "./RoomSplats";
 import { TouchControls } from "./TouchControls";
 
@@ -142,7 +143,11 @@ export default function World(props: WorldProps) {
           <hemisphereLight args={["#fff8ee", "#6b5a4a", 1.3]} />
           <ambientLight color={sim.layout.lighting.ambientColor} intensity={0.4} />
           <directionalLight position={[2, 4, 3]} intensity={1.2} />
-          <RoomSplats spacing={props.profile.splatSpacing} scene={scene} onState={setRoomState} />
+          {scene?.manifest.mesh ? (
+            <RoomMesh scene={scene} onState={setRoomState} />
+          ) : (
+            <RoomSplats spacing={props.profile.splatSpacing} scene={scene} onState={setRoomState} />
+          )}
           <Simulation
             sim={sim}
             input={input}
@@ -209,7 +214,7 @@ export default function World(props: WorldProps) {
 
 /**
  * The room's collision geometry: the sample room's boxes, or a scan's collision mesh (a GLB in
- * the splat's file space) moved into the world by the manifest transform.
+ * the scan's file space) moved into the world by the manifest transform.
  */
 type Colliders = { layout: RoomLayout; add(physics: PhysicsWorld): void };
 

@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import type { CaptureOptions, RoomInfo, UpAxis } from "@vcr/protocol";
+import { type CaptureOptions, type RoomInfo, SCAN_FILE_PATTERN, type UpAxis } from "@vcr/protocol";
 import { api, ApiRequestError, uploadParts } from "../lib/api";
 
 const errorText = (err: unknown) =>
@@ -106,6 +106,12 @@ function RoomRow({ room, onChanged }: { room: RoomInfo; onChanged(): void }) {
       </div>
       {room.status === "processing" && <Progress value={room.progress ?? 0} />}
       {room.status === "failed" && room.error && <p className="error">{room.error}</p>}
+      {room.status === "ready" && scan?.pointCloud && (
+        <p className="muted">
+          Made from a point cloud, so fine detail is soft. For a sharper room, export the same scan
+          as a textured mesh (<b>GLB</b>) and upload that instead.
+        </p>
+      )}
       {error && <p className="error">{error}</p>}
       {open && scan && (
         <AdjustRoom
@@ -224,19 +230,14 @@ function AddScan(props: {
     setFile(f);
     setError(null);
     if (f && !name)
-      setName(
-        f.name
-          .replace(/\.(ply|spz)$/i, "")
-          .replace(/[_-]+/g, " ")
-          .slice(0, 60),
-      );
+      setName(f.name.replace(SCAN_FILE_PATTERN, "").replace(/[_-]+/g, " ").slice(0, 60));
   };
 
   async function upload(e: FormEvent) {
     e.preventDefault();
     if (!file) return;
-    if (!/\.(ply|spz)$/i.test(file.name)) {
-      setError("Choose a .ply or .spz file exported from your scanning app.");
+    if (!SCAN_FILE_PATTERN.test(file.name)) {
+      setError("Choose a .ply, .spz or .glb file exported from your scanning app.");
       return;
     }
     setError(null);
@@ -269,14 +270,17 @@ function AddScan(props: {
       <h3>Add a room from a scan</h3>
       <p className="muted">
         Scan your room with a free phone app, export it as a Gaussian splat (<b>.spz</b> or{" "}
-        <b>.ply</b>), and upload it here. Gatherings can then happen in your own room.
+        <b>.ply</b>) or a textured mesh (<b>.glb</b>), and upload it here. Gatherings can then
+        happen in your own room.
       </p>
       <details>
         <summary>How to export from Scaniverse, Polycam or KIRI</summary>
         <ul className="howto">
           <li>
             <b>Scaniverse</b> (free, iPhone and Android): scan in <i>Splat</i> mode, open the scan,
-            tap <i>Share</i> / <i>Export</i>, and pick <b>SPZ</b> (smallest) or <b>PLY</b>.
+            tap <i>Share</i> / <i>Export</i>, and pick <b>SPZ</b> (smallest) or <b>PLY</b>. For a
+            mesh scan, export <b>GLB</b>: it keeps the photo textures. (A <i>point cloud</i> PLY
+            works too, but looks much softer.)
           </li>
           <li>
             <b>Polycam</b>: make a <i>Gaussian Splat</i> capture, then <i>Export</i> it as a splat{" "}
@@ -305,7 +309,7 @@ function AddScan(props: {
         Scan file
         <input
           type="file"
-          accept=".ply,.spz"
+          accept=".ply,.spz,.glb"
           onChange={(e) => pick(e.target.files?.[0] ?? null)}
           disabled={uploading}
         />

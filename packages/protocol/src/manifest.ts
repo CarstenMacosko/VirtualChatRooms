@@ -10,11 +10,12 @@ import { z } from "zod";
  * Bounds, spawn points, seats and zones are already in world space.
  *
  * v2 (Phase 4) adds the explicit file-to-world `transform.rotation` / `transform.translation`,
- * `splat.format`, `collision.format` and `transform.scaleSource`. v1 manifests are migrated on
- * parse (`migrateManifestV1`).
+ * `splat.format`, `collision.format` and `transform.scaleSource`. v3 lets a room be a textured
+ * mesh instead of splats: exactly one of `splat` and `mesh` is set. Older manifests are migrated
+ * on parse (`migrateManifestV1`, `migrateManifestV2`).
  */
 
-export const SUPPORTED_MANIFEST_VERSION = 2;
+export const SUPPORTED_MANIFEST_VERSION = 3;
 
 const Vec3 = z.tuple([z.number(), z.number(), z.number()]);
 type Vec3 = z.infer<typeof Vec3>;
@@ -30,6 +31,13 @@ const SplatAsset = z.looseObject({
   key: StorageKey,
   count: z.number().int().positive(),
   format: SplatFormat,
+});
+
+/** A textured mesh room (a photogrammetry scan's GLB), drawn as it was captured. */
+const MeshAsset = z.looseObject({
+  key: StorageKey,
+  triangles: z.number().int().positive(),
+  format: z.literal("glb"),
 });
 
 export const Seat = z.looseObject({
@@ -72,29 +80,37 @@ export const ManifestTransform = z.looseObject({
 });
 export type ManifestTransform = z.infer<typeof ManifestTransform>;
 
-export const RoomManifest = z.looseObject({
-  manifestVersion: z.literal(SUPPORTED_MANIFEST_VERSION),
-  roomId: z.string().min(1),
-  splat: SplatAsset.extend({ lods: z.array(SplatAsset).default([]) }),
-  /** A coarse triangle mesh (GLB) in file space, like the splat (ADR 0002). */
-  collision: z.looseObject({
-    key: StorageKey,
-    triangles: z.number().int().positive(),
-    format: z.literal("glb"),
-  }),
-  navmesh: z.looseObject({ key: StorageKey }).nullable().default(null),
-  transform: ManifestTransform,
-  bounds: z.looseObject({ min: Vec3, max: Vec3 }),
-  spawnPoints: z.array(z.looseObject({ position: Vec3, yaw: z.number() })).min(1),
-  seats: z.array(Seat).default([]),
-  zones: z.array(Zone).default([]),
-  lighting: z
-    .looseObject({
-      ambientColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-      intensity: z.number().nonnegative(),
-    })
-    .default({ ambientColor: "#ffffff", intensity: 1 }),
-});
+export const RoomManifest = z
+  .looseObject({
+    manifestVersion: z.literal(SUPPORTED_MANIFEST_VERSION),
+    roomId: z.string().min(1),
+    /** What the room looks like: splats or a textured mesh (exactly one). */
+    splat: SplatAsset.extend({ lods: z.array(SplatAsset).default([]) })
+      .nullable()
+      .default(null),
+    mesh: MeshAsset.nullable().default(null),
+    /** A coarse triangle mesh (GLB) in file space, like the splat or mesh (ADR 0002). */
+    collision: z.looseObject({
+      key: StorageKey,
+      triangles: z.number().int().positive(),
+      format: z.literal("glb"),
+    }),
+    navmesh: z.looseObject({ key: StorageKey }).nullable().default(null),
+    transform: ManifestTransform,
+    bounds: z.looseObject({ min: Vec3, max: Vec3 }),
+    spawnPoints: z.array(z.looseObject({ position: Vec3, yaw: z.number() })).min(1),
+    seats: z.array(Seat).default([]),
+    zones: z.array(Zone).default([]),
+    lighting: z
+      .looseObject({
+        ambientColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+        intensity: z.number().nonnegative(),
+      })
+      .default({ ambientColor: "#ffffff", intensity: 1 }),
+  })
+  .refine((m) => (m.splat === null) !== (m.mesh === null), {
+    message: "A room has either splats or a mesh.",
+  });
 export type RoomManifest = z.infer<typeof RoomManifest>;
 export type RoomManifestInput = z.input<typeof RoomManifest>;
 
@@ -149,6 +165,11 @@ export function migrateManifestV1(v1: Record<string, unknown>): Record<string, u
   };
 }
 
+/** v2 → v3: every v2 room is splats. */
+export function migrateManifestV2(v2: Record<string, unknown>): Record<string, unknown> {
+  return { ...v2, manifestVersion: 3, mesh: null };
+}
+
 export function parseRoomManifest(input: unknown): RoomManifest {
   const version = (input as { manifestVersion?: unknown } | null)?.manifestVersion;
   if (typeof version === "number" && version > SUPPORTED_MANIFEST_VERSION) {
@@ -156,6 +177,8 @@ export function parseRoomManifest(input: unknown): RoomManifest {
       `manifest version ${version} is newer than this client supports (${SUPPORTED_MANIFEST_VERSION})`,
     );
   }
-  if (version === 1) return RoomManifest.parse(migrateManifestV1(input as Record<string, unknown>));
-  return RoomManifest.parse(input);
+  let manifest = input as Record<string, unknown>;
+  if (version === 1) manifest = migrateManifestV1(manifest);
+  if (version === 1 || version === 2) manifest = migrateManifestV2(manifest);
+  return RoomManifest.parse(manifest);
 }
