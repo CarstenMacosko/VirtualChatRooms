@@ -25,8 +25,24 @@ describe("room manifest", () => {
     expect(m.mesh).toBeNull();
     expect(m.navmesh).toBeNull();
     expect(m.seats).toEqual([]);
+    expect(m.walkways).toEqual([]);
+    expect(m.tables).toEqual([]);
     expect(m.zones).toEqual([]);
     expect(m.lighting).toEqual({ ambientColor: "#ffffff", intensity: 1 });
+  });
+
+  it("reads the room's setup: walkways, seats and game tables", () => {
+    const m = parseRoomManifest({
+      ...minimal,
+      walkways: [{ id: "hall", min: [-1, 2], max: [0, 4] }],
+      seats: [{ id: 7, position: [1, 0.45, -2], yaw: 0, height: 0.45, kind: "sofa" }],
+      tables: [{ id: "coffee", center: [0, 0.4, 0], yaw: 0, size: [1, 0.5], source: "auto" }],
+    });
+    expect(m.seats[0]!.source).toBe("user");
+    expect(m.tables[0]).toMatchObject({ name: "", games: [], source: "auto" });
+    expect(() =>
+      parseRoomManifest({ ...minimal, walkways: [{ id: "w", min: [1, 0], max: [1, 2] }] }),
+    ).toThrow();
   });
 
   it("keeps fields it doesn't know about, so newer v3 manifests still load", () => {

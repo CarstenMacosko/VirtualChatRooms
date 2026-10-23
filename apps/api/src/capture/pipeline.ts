@@ -150,6 +150,8 @@ export async function processScan(
     bounds: analysis.bounds,
     spawnPoints: analysis.spawnPoints,
     seats: [],
+    walkways: [],
+    tables: [],
     zones: [],
     lighting: { ambientColor: "#ffffff", intensity: 1 },
   };
@@ -174,7 +176,8 @@ export async function processScan(
 /**
  * Rescales a processed room so it's `heightMeters` tall. World coordinates scale about the
  * origin (the floor's center), so this only touches the manifest: the collision mesh is in file
- * space.
+ * space. The room's setup scales with it. (Processing again, for a new up axis, starts the
+ * setup over: the floor and walls move.)
  */
 export async function rescaleRoom(
   storage: ObjectStorage,
@@ -196,6 +199,16 @@ export async function rescaleRoom(
     bounds: { min: scale(manifest.bounds.min), max: scale(manifest.bounds.max) },
     spawnPoints: manifest.spawnPoints.map((s) => ({ ...s, position: scale(s.position) })),
     seats: manifest.seats.map((s) => ({ ...s, position: scale(s.position), height: s.height * k })),
+    walkways: manifest.walkways.map((w) => ({
+      ...w,
+      min: [w.min[0] * k, w.min[1] * k],
+      max: [w.max[0] * k, w.max[1] * k],
+    })),
+    tables: manifest.tables.map((t) => ({
+      ...t,
+      center: scale(t.center),
+      size: [t.size[0] * k, t.size[1] * k],
+    })),
   };
   await storage.put(manifestKey, JSON.stringify(next), "application/json");
   return {

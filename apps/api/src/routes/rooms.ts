@@ -9,6 +9,8 @@ import {
   MAX_SCAN_ROOMS,
   parseRoomManifest,
   type RoomInfo,
+  type RoomManifest,
+  RoomSetup,
   type RoomsResponse,
   ScanDetails,
   ScanFormat,
@@ -47,18 +49,17 @@ export async function ensureSampleRoom(db: Database, ownerId: string) {
 }
 
 /**
- * Signed URLs for a ready scan room's assets, scoped to one live session (ADR 0012). Null for
- * the sample room, which every client generates itself.
+ * Signed URLs for a ready scan room's assets, scoped to one live session (ADR 0012), or, without
+ * one, for the owner setting the room up. Null for the sample room, which every client generates
+ * itself.
  */
 export async function sceneAssets(
   storage: ObjectStorage,
   room: typeof rooms.$inferSelect,
-  sessionId: string,
+  sessionId?: string,
 ): Promise<SceneAssets | null> {
   if (room.kind !== "scan" || room.status !== "ready" || !room.manifestKey) return null;
-  const manifest = parseRoomManifest(
-    JSON.parse((await storage.get(room.manifestKey)).toString("utf8")),
-  );
+  const manifest = await readManifest(storage, room.manifestKey);
   const expiresAt = new Date(Date.now() + ASSET_URL_TTL_MS);
   const keys = [
     ...(manifest.splat ? [manifest.splat.key, ...manifest.splat.lods.map((l) => l.key)] : []),
@@ -66,8 +67,40 @@ export async function sceneAssets(
     manifest.collision.key,
   ];
   const urls: Record<string, string> = {};
-  for (const key of keys) urls[key] = await storage.signDownload(key, { expiresAt, sessionId });
+  for (const key of keys) {
+    urls[key] = await storage.signDownload(key, { expiresAt, ...(sessionId && { sessionId }) });
+  }
   return { manifest, urls, expiresAt: expiresAt.toISOString() };
+}
+
+async function readManifest(storage: ObjectStorage, key: string): Promise<RoomManifest> {
+  return parseRoomManifest(JSON.parse((await storage.get(key)).toString("utf8")));
+}
+
+/**
+ * Why a room setup doesn't fit its room, or null. Everything must lie within the room's bounds
+ * (a little slack for seats and tables placed on its edge).
+ */
+export function setupProblem(setup: RoomSetup, manifest: RoomManifest): string | null {
+  const { min, max } = manifest.bounds;
+  const slack = 0.25;
+  const inside = (x: number, z: number) =>
+    x >= min[0] - slack && x <= max[0] + slack && z >= min[2] - slack && z <= max[2] + slack;
+  const height = (y: number) => y >= min[1] - slack && y <= max[1];
+  for (const w of setup.walkways) {
+    if (!inside(w.min[0], w.min[1]) || !inside(w.max[0], w.max[1])) {
+      return "A walkway reaches outside the room.";
+    }
+  }
+  for (const seat of setup.seats) {
+    const [x, y, z] = seat.position;
+    if (!inside(x, z) || !height(y)) return "A seat is outside the room.";
+  }
+  for (const table of setup.tables) {
+    const [x, y, z] = table.center;
+    if (!inside(x, z) || !height(y)) return "A table is outside the room.";
+  }
+  return null;
 }
 
 export function roomRoutes(app: FastifyInstance, ctx: Services) {
@@ -262,6 +295,41 @@ export function roomRoutes(app: FastifyInstance, ctx: Services) {
     changed(me(req));
     const updated = await ownRoom(room.id, me(req));
     return roomInfo(updated!) satisfies RoomInfo;
+  });
+
+  // The room's manifest and files, for its owner to set it up outside a gathering.
+  app.get<IdParams>("/rooms/:id/scene", auth, async (req, reply) => {
+    const room = await ownRoom(req.params.id, me(req));
+    if (!room) return sendError(reply, 404, "not_found", "No such room.");
+    if (room.kind !== "scan") {
+      return sendError(reply, 400, "not_a_scan", "Only scanned rooms can be set up.");
+    }
+    const scene = await sceneAssets(storage, room);
+    if (!scene) {
+      return sendError(reply, 409, "not_ready", "Wait until the room has finished processing.");
+    }
+    return scene;
+  });
+
+  // Walkways, seats and game tables. Gatherings already running pick it up when people rejoin.
+  app.put<IdParams>("/rooms/:id/setup", auth, async (req, reply) => {
+    const body = parseBody(RoomSetup, req, reply);
+    if (!body) return;
+    const room = await ownRoom(req.params.id, me(req));
+    if (!room) return sendError(reply, 404, "not_found", "No such room.");
+    if (room.kind !== "scan") {
+      return sendError(reply, 400, "not_a_scan", "Only scanned rooms can be set up.");
+    }
+    if (room.status !== "ready" || !room.manifestKey) {
+      return sendError(reply, 409, "not_ready", "Wait until the room has finished processing.");
+    }
+    const manifest = await readManifest(storage, room.manifestKey);
+    const problem = setupProblem(body, manifest);
+    if (problem) return sendError(reply, 400, "invalid_setup", problem);
+    const next = parseRoomManifest({ ...manifest, ...body });
+    await storage.put(room.manifestKey, JSON.stringify(next), "application/json");
+    changed(me(req));
+    return { walkways: next.walkways, seats: next.seats, tables: next.tables } satisfies RoomSetup;
   });
 
   // Deleting a room deletes its files. A gathering in it ends first.

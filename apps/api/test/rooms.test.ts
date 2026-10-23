@@ -9,7 +9,9 @@ import {
   MeResponse,
   type RoomInfo,
   RoomInfo as RoomInfoSchema,
+  RoomSetup,
   RoomsResponse,
+  SceneAssets,
   SessionInfo,
   UPLOAD_PART_BYTES,
 } from "@vcr/protocol";
@@ -308,13 +310,53 @@ describe("room scans", () => {
     await owner.call("POST", `/sessions/${session.id}/end`);
   });
 
+  it("lets the owner set up walkways, seats and game tables", async () => {
+    const before = SceneAssets.parse((await owner.call("GET", `/rooms/${ready.id}/scene`)).json());
+    expect(before.manifest).toMatchObject({ walkways: [], seats: [], tables: [] });
+    // Signed without a session: the owner isn't in a gathering while setting up.
+    const meshUrl = before.urls[before.manifest.collision.key]!;
+    expect((await app.inject({ method: "GET", url: meshUrl })).statusCode).toBe(200);
+
+    const setup = {
+      walkways: [{ id: "door", min: [-0.5, 1], max: [0.5, 2.5] }],
+      seats: [{ id: 1, position: [1, 0.45, -2], yaw: 0, height: 0.45, kind: "sofa" }],
+      tables: [{ id: "t1", center: [0, 0.42, 0], yaw: 0.3, size: [0.9, 0.6], games: ["jigsaw"] }],
+    };
+    const saved = await owner.call("PUT", `/rooms/${ready.id}/setup`, setup);
+    expect(saved.statusCode).toBe(200);
+    expect(RoomSetup.parse(saved.json()).seats[0]!.source).toBe("user");
+    const after = SceneAssets.parse((await owner.call("GET", `/rooms/${ready.id}/scene`)).json());
+    expect(after.manifest.walkways).toEqual(setup.walkways);
+    expect(after.manifest.tables[0]).toMatchObject({ id: "t1", games: ["jigsaw"], name: "" });
+
+    // Outside the room, duplicate ids, backwards rectangles, other people: all refused.
+    const far = { ...setup, tables: [{ ...setup.tables[0], center: [40, 0.4, 0] }] };
+    expect((await owner.call("PUT", `/rooms/${ready.id}/setup`, far)).statusCode).toBe(400);
+    const twice = { ...setup, seats: [setup.seats[0], setup.seats[0]] };
+    expect((await owner.call("PUT", `/rooms/${ready.id}/setup`, twice)).statusCode).toBe(400);
+    const backwards = { ...setup, walkways: [{ id: "w", min: [1, 1], max: [0, 2] }] };
+    expect((await owner.call("PUT", `/rooms/${ready.id}/setup`, backwards)).statusCode).toBe(400);
+    const stranger = await person("Setup Stranger");
+    expect((await stranger.call("PUT", `/rooms/${ready.id}/setup`, setup)).statusCode).toBe(404);
+    expect((await stranger.call("GET", `/rooms/${ready.id}/scene`)).statusCode).toBe(404);
+  });
+
   it("lets the owner fix the scale and rename", async () => {
+    const scene = async () =>
+      SceneAssets.parse((await owner.call("GET", `/rooms/${ready.id}/scene`)).json()).manifest;
+    const before = await scene();
     const res = await owner.call("PATCH", `/rooms/${ready.id}`, { heightMeters: 3, name: "Den" });
     expect(res.statusCode).toBe(200);
     const room = RoomInfoSchema.parse(res.json());
     expect(room.name).toBe("Den");
     expect(room.scan!.size.height).toBeCloseTo(3, 1);
     expect(room.scan!.scaleSource).toBe("user");
+    // The setup scales with the room.
+    const k = 3 / before.bounds.max[1];
+    const after = await scene();
+    expect(after.tables[0]!.size[0]).toBeCloseTo(before.tables[0]!.size[0] * k, 5);
+    expect(after.walkways[0]!.max[1]).toBeCloseTo(before.walkways[0]!.max[1] * k, 5);
+    expect(after.seats[0]!.height).toBeCloseTo(before.seats[0]!.height * k, 5);
     expect((await owner.call("PATCH", `/rooms/${ready.id}`, {})).statusCode).toBe(400);
   });
 

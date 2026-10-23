@@ -1,4 +1,4 @@
-import type { Seat } from "@vcr/protocol";
+import type { Seat, Table } from "@vcr/protocol";
 import { mulberry32, type Vec3 } from "../math";
 import type { BoxCollider } from "../locomotion/physics";
 
@@ -194,13 +194,32 @@ export const SAMPLE_ROOM = {
   name: "Sample living room",
   bounds: { min: [-W, 0, -D] as Vec3, max: [W, H, D] as Vec3 },
   spawnPoints: [{ position: [0.3, 0, 1.2] as Vec3, yaw: Math.PI }],
-  /** Seats for the sitting feature (post-MVP); unused until then. */
+  /** The sofa's three cushions and the armchair. */
   seats: [
-    { id: 1, position: [-0.6, 0.44, -2.05], yaw: 0, height: 0.44, kind: "sofa" },
-    { id: 2, position: [0, 0.44, -2.05], yaw: 0, height: 0.44, kind: "sofa" },
-    { id: 3, position: [0.6, 0.44, -2.05], yaw: 0, height: 0.44, kind: "sofa" },
-    { id: 4, position: [-2.55, 0.44, 0.4], yaw: Math.PI / 2, height: 0.44, kind: "chair" },
+    { id: 1, position: [-0.6, 0.44, -2.05], yaw: 0, height: 0.44, kind: "sofa", source: "user" },
+    { id: 2, position: [0, 0.44, -2.05], yaw: 0, height: 0.44, kind: "sofa", source: "user" },
+    { id: 3, position: [0.6, 0.44, -2.05], yaw: 0, height: 0.44, kind: "sofa", source: "user" },
+    {
+      id: 4,
+      position: [-2.55, 0.44, 0.4],
+      yaw: Math.PI / 2,
+      height: 0.44,
+      kind: "chair",
+      source: "user",
+    },
   ] satisfies Seat[],
+  /** The coffee table's top. */
+  tables: [
+    {
+      id: "coffee-table",
+      name: "Coffee table",
+      center: [0.2, 0.445, -0.6],
+      yaw: 0,
+      size: [1.2, 0.6],
+      source: "user",
+      games: ["jigsaw"],
+    },
+  ] satisfies Table[],
   lighting: { ambientColor: "#fff4e6", intensity: 1.1 },
 };
 
