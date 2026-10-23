@@ -65,7 +65,11 @@ function apply(event: LiveEvent) {
       case "call":
         return { calls: [...s.calls.filter((c) => c.callId !== event.callId), event] };
       case "call-ended":
-        return { calls: s.calls.filter((c) => c.callId !== event.callId) };
+        // Recents show how it ended.
+        return {
+          calls: s.calls.filter((c) => c.callId !== event.callId),
+          sessionsVersion: s.sessionsVersion + 1,
+        };
       case "rooms-changed":
         return { roomsVersion: s.roomsVersion + 1 };
     }

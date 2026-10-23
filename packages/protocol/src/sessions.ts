@@ -94,3 +94,22 @@ export type SessionsResponse = z.infer<typeof SessionsResponse>;
 /** `GET /dev/share`: the public link `pnpm share` is serving right now, if any. */
 export const ShareInfo = z.object({ url: z.string().nullable() });
 export type ShareInfo = z.infer<typeof ShareInfo>;
+
+/** One entry in your call history (`GET /me/recent-calls`), newest first. */
+export const RecentCall = z.object({
+  /** Session id, or the call-link call's id. */
+  id: z.string(),
+  at: z.string(),
+  /** You rang them, they rang you, or someone used your call link. */
+  direction: z.enum(["outgoing", "incoming", "call-link"]),
+  /** The other people: who you rang, who rang you, or the caller's name. */
+  people: z.array(z.object({ userId: z.string().nullable(), name: z.string() })),
+  outcome: z.enum(["answered", "missed", "declined", "no-answer", "ringing", "cancelled"]),
+  /** Still going: you can join. */
+  live: z.boolean(),
+  sessionId: z.string().nullable(),
+});
+export type RecentCall = z.infer<typeof RecentCall>;
+
+export const RecentCallsResponse = z.object({ calls: z.array(RecentCall) });
+export type RecentCallsResponse = z.infer<typeof RecentCallsResponse>;

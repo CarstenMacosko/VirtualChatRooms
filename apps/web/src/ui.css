@@ -1555,6 +1555,9 @@ video.mirror {
   .portal-main .contacts {
     order: 2;
   }
+  .portal-main .recents {
+    order: 2;
+  }
   .portal-main > * > .card {
     order: 3;
   }
@@ -1743,4 +1746,23 @@ video.mirror {
     padding: 28px 16px;
     gap: 28px;
   }
+}
+
+/* Recents */
+.recent-icon {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.recents li.missed b,
+.recents li.missed .recent-icon {
+  color: var(--bad);
+}
+.recents > button.small {
+  justify-self: start;
 }

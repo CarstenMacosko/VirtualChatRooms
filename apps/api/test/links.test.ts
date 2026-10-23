@@ -12,6 +12,7 @@ import {
   LinkResponse,
   MeResponse,
   type PushPayload,
+  RecentCallsResponse,
   SessionInfo,
   StartCallResponse,
 } from "@vcr/protocol";
@@ -285,5 +286,46 @@ describe("call links", () => {
     }
     expect(codes.slice(0, 6).every((c) => c === 201)).toBe(true);
     expect(codes.at(-1)).toBe(429);
+  });
+});
+
+describe("recent calls", () => {
+  it("list calls you made, calls you missed and calls through your link", async () => {
+    const host = await person("Recent Rita");
+    const friend = await person("Recent Ray");
+    const code = MeResponse.parse((await friend.call("GET", "/me")).json()).friendCode;
+    await host.call("POST", "/contacts", { friendCode: code });
+    await friend.call("POST", `/contacts/${host.id}/accept`);
+    const rooms = (await host.call("GET", "/rooms")).json() as { rooms: Array<{ id: string }> };
+    const session = SessionInfo.parse(
+      (
+        await host.call("POST", "/sessions", {
+          roomId: rooms.rooms[0]!.id,
+          inviteUserIds: [friend.id],
+        })
+      ).json(),
+    );
+    await sleep(500); // the ring times out (300 ms in tests): missed
+    await host.call("POST", `/sessions/${session.id}/end`);
+    const link = LinkResponse.parse((await host.call("GET", "/me/call-link")).json());
+    const caller = StartCallResponse.parse(
+      (await anon("POST", `/links/${link.token}/call`, { displayName: "Neighbor Ned" })).json(),
+    );
+    await host.call("POST", `/calls/${caller.callId}/decline`);
+
+    const mine = RecentCallsResponse.parse((await host.call("GET", "/me/recent-calls")).json());
+    expect(mine.calls.map((c) => [c.direction, c.outcome, c.people.map((p) => p.name)])).toEqual([
+      ["call-link", "declined", ["Neighbor Ned"]],
+      ["outgoing", "no-answer", ["Recent Ray"]],
+    ]);
+    const theirs = RecentCallsResponse.parse((await friend.call("GET", "/me/recent-calls")).json());
+    expect(theirs.calls).toEqual([
+      expect.objectContaining({
+        direction: "incoming",
+        outcome: "missed",
+        people: [{ userId: host.id, name: "Recent Rita" }],
+        live: false,
+      }),
+    ]);
   });
 });

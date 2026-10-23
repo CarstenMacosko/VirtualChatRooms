@@ -325,6 +325,11 @@ try {
   await click(host.page, "End the call for everyone");
   check("ending the call reaches the guest", await hasText(guest, "ended", 15_000));
   await shot(guest, "13-guest-ended");
+  check(
+    "the host's Recents show the call and the call-link caller",
+    (await hasText(host.page, "Recents")) && (await hasText(host.page, `Caller ${run}`)),
+  );
+  await shot(host.page, "14-host-recents");
 } catch (err) {
   check("call check ran to the end", false, String(err));
 } finally {

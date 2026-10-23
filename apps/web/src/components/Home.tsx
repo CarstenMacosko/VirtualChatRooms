@@ -4,6 +4,9 @@ import {
   Link2,
   LogOut,
   Phone,
+  PhoneIncoming,
+  PhoneMissed,
+  PhoneOutgoing,
   Plus,
   QrCode as QrIcon,
   RefreshCw,
@@ -20,6 +23,7 @@ import type {
   DevLoginResponse,
   LinkResponse,
   MeResponse,
+  RecentCall,
   RoomInfo,
   SessionInfo,
   StartSessionRequest,
@@ -61,6 +65,7 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [contacts, setContacts] = useState<ContactsResponse | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [recent, setRecent] = useState<RecentCall[]>([]);
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
   const [capture, setCapture] = useState<CaptureOptions | null>(null);
   const [roomsFetch, setRoomsFetch] = useState(0);
@@ -81,6 +86,10 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
   useEffect(() => {
     void api.sessions().then(
       (r) => setSessions(r.sessions),
+      () => {},
+    );
+    void api.recentCalls().then(
+      (r) => setRecent(r.calls),
       () => {},
     );
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- sessionsVersion triggers the refetch
@@ -185,6 +194,12 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
           </div>
 
           <LiveNow sessions={sessions} myId={auth.user.id} />
+          <Recents
+            calls={recent}
+            contactIds={new Set(people.map((p) => p.userId))}
+            canCall={Boolean(roomId)}
+            onCall={(userIds) => void call({ inviteUserIds: userIds })}
+          />
 
           {myAvatar.status === "ready" && !myAvatar.recipe && (
             <div className="card callout-card">
@@ -415,6 +430,94 @@ function LiveNow({ sessions, myId }: { sessions: SessionInfo[]; myId: string }) 
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+const OUTCOME_TEXT: Record<RecentCall["outcome"], string> = {
+  answered: "Answered",
+  missed: "Missed",
+  declined: "Declined",
+  "no-answer": "No answer",
+  ringing: "Ringing",
+  cancelled: "Hung up",
+};
+
+function when(iso: string) {
+  const at = new Date(iso);
+  const days = Math.floor((Date.now() - at.getTime()) / 86_400_000);
+  const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (days === 0 && at.getDate() === new Date().getDate()) return time;
+  if (days <= 1) return `Yesterday ${time}`;
+  return at.toLocaleDateString([], {
+    weekday: days < 7 ? "short" : undefined,
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** Call history, like a phone's Recents, with call-back buttons. */
+function Recents(props: {
+  calls: RecentCall[];
+  contactIds: Set<string>;
+  canCall: boolean;
+  onCall(userIds: string[]): void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (!props.calls.length) return null;
+  const shown = expanded ? props.calls : props.calls.slice(0, 5);
+  return (
+    <div className="card recents">
+      <h2>Recents</h2>
+      <ul className="rows">
+        {shown.map((c) => {
+          const missed =
+            c.direction !== "outgoing" && (c.outcome === "missed" || c.outcome === "cancelled");
+          const names = c.people.map((p) => p.name).join(", ") || "Nobody rung";
+          const callable = c.people
+            .map((p) => p.userId)
+            .filter((id): id is string => id !== null && props.contactIds.has(id));
+          const Icon =
+            c.direction === "outgoing" ? PhoneOutgoing : missed ? PhoneMissed : PhoneIncoming;
+          return (
+            <li key={`${c.direction}-${c.id}`} className={missed ? "missed" : ""}>
+              <span className="recent-icon" aria-hidden>
+                <Icon size={18} />
+              </span>
+              <span className="grow">
+                <b>
+                  {names}
+                  {c.direction === "call-link" && <span className="muted"> · guest</span>}
+                </b>
+                <span className="muted">
+                  {c.direction === "outgoing" ? "Outgoing" : "Incoming"} · {OUTCOME_TEXT[c.outcome]}{" "}
+                  · {when(c.at)}
+                </span>
+              </span>
+              {c.live && c.sessionId ? (
+                <button className="join" onClick={() => navigate(`/s/${c.sessionId}`)}>
+                  Join
+                </button>
+              ) : callable.length ? (
+                <button
+                  className="call-button"
+                  disabled={!props.canCall}
+                  onClick={() => props.onCall(callable)}
+                  aria-label={`Call ${names} back`}
+                  title="Call back"
+                >
+                  <Video size={18} />
+                </button>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      {props.calls.length > 5 && (
+        <button className="ghost small" onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Show fewer" : `Show all ${props.calls.length}`}
+        </button>
+      )}
     </div>
   );
 }

@@ -9,6 +9,8 @@ import {
   InviteMoreRequest,
   type JoinSessionResponse,
   type RealmTicketClaims,
+  type RecentCall,
+  type RecentCallsResponse,
   type SessionsResponse,
   type ShareInfo,
   StartSessionRequest,
@@ -17,6 +19,7 @@ import type { Services } from "../app";
 import { issueRealmTicket, requireRealm, requireSession } from "../auth";
 import type { Database } from "../db/client";
 import {
+  calls,
   contactGroupMembers,
   contactGroups,
   guestLinks,
@@ -149,6 +152,98 @@ export function sessionRoutes(app: FastifyInstance, ctx: Services) {
     }
     await invite(sessionId, me(req), room.name, candidates);
     return reply.code(201).send(await gatherings.info(sessionId));
+  });
+
+  // Call history, like a phone's Recents: calls you made, calls you got, and calls through your
+  // call link.
+  app.get("/me/recent-calls", auth, async (req): Promise<RecentCallsResponse> => {
+    const limit = 30;
+    const hosted = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.hostId, me(req)))
+      .orderBy(desc(sessions.createdAt))
+      .limit(limit);
+    const hostedInvites = hosted.length
+      ? await db
+          .select({
+            sessionId: sessionInvites.sessionId,
+            userId: sessionInvites.inviteeId,
+            name: users.displayName,
+            status: sessionInvites.status,
+          })
+          .from(sessionInvites)
+          .innerJoin(users, eq(users.id, sessionInvites.inviteeId))
+          .where(
+            inArray(
+              sessionInvites.sessionId,
+              hosted.map((h) => h.id),
+            ),
+          )
+      : [];
+    const received = await db
+      .select({ invite: sessionInvites, session: sessions, hostName: users.displayName })
+      .from(sessionInvites)
+      .innerJoin(sessions, eq(sessions.id, sessionInvites.sessionId))
+      .innerJoin(users, eq(users.id, sessions.hostId))
+      .where(eq(sessionInvites.inviteeId, me(req)))
+      .orderBy(desc(sessionInvites.createdAt))
+      .limit(limit);
+    const linkCalls = await db
+      .select()
+      .from(calls)
+      .where(eq(calls.ownerId, me(req)))
+      .orderBy(desc(calls.createdAt))
+      .limit(limit);
+    const liveIds = new Set(
+      [...hosted.map((h) => h), ...received.map((r) => r.session)]
+        .filter((x) => x.status === "live")
+        .map((x) => x.id),
+    );
+
+    const list: RecentCall[] = [];
+    for (const h of hosted) {
+      const invited = hostedInvites.filter((i) => i.sessionId === h.id);
+      // Calls answered through your call link already show as call-link entries.
+      if (!invited.length && linkCalls.some((c) => c.sessionId === h.id)) continue;
+      list.push({
+        id: h.id,
+        at: h.createdAt.toISOString(),
+        direction: "outgoing",
+        people: invited.map((i) => ({ userId: i.userId, name: i.name })),
+        outcome: invited.some((i) => i.status === "accepted")
+          ? "answered"
+          : invited.some((i) => i.status === "ringing")
+            ? "ringing"
+            : "no-answer",
+        live: liveIds.has(h.id),
+        sessionId: h.id,
+      });
+    }
+    for (const r of received) {
+      list.push({
+        id: r.session.id,
+        at: r.invite.createdAt.toISOString(),
+        direction: "incoming",
+        people: [{ userId: r.session.hostId, name: r.hostName }],
+        outcome: r.invite.status === "accepted" ? "answered" : r.invite.status,
+        live: liveIds.has(r.session.id),
+        sessionId: r.session.id,
+      });
+    }
+    for (const c of linkCalls) {
+      list.push({
+        id: c.id,
+        at: c.createdAt.toISOString(),
+        direction: "call-link",
+        people: [{ userId: null, name: c.callerName }],
+        outcome: c.status === "accepted" ? "answered" : c.status,
+        live: false,
+        sessionId: c.sessionId,
+      });
+    }
+    list.sort((a, b) => b.at.localeCompare(a.at));
+    return { calls: list.slice(0, limit) };
   });
 
   app.get("/sessions", auth, async (req): Promise<SessionsResponse> => {
