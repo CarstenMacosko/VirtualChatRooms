@@ -7,6 +7,7 @@ import { refreshSession, useAuth } from "./auth";
 type Ring = Extract<LiveEvent, { type: "ring" }>;
 type InviteResponse = Extract<LiveEvent, { type: "invite-response" }>;
 type IncomingCall = Extract<LiveEvent, { type: "call" }>;
+type MissedCall = Extract<LiveEvent, { type: "missed-call" }>;
 
 interface LiveStore {
   connected: boolean;
@@ -16,6 +17,8 @@ interface LiveStore {
   calls: IncomingCall[];
   /** Recent answers to calls you made, for toasts. */
   responses: (InviteResponse & { at: number })[];
+  /** Calls you missed while this app was open, for toasts. */
+  missed: (MissedCall & { at: number })[];
   /** Bumped when contacts (or their presence) change, so screens refetch. */
   contactsVersion: number;
   /** Bumped when any session you're part of changes. */
@@ -25,6 +28,7 @@ interface LiveStore {
   dismissRing(sessionId: string): void;
   dismissCall(callId: string): void;
   dismissResponse(at: number): void;
+  dismissMissed(at: number): void;
 }
 
 export const useLive = create<LiveStore>((set) => ({
@@ -32,12 +36,14 @@ export const useLive = create<LiveStore>((set) => ({
   rings: [],
   calls: [],
   responses: [],
+  missed: [],
   contactsVersion: 0,
   sessionsVersion: 0,
   roomsVersion: 0,
   dismissRing: (sessionId) =>
     set((s) => ({ rings: s.rings.filter((r) => r.sessionId !== sessionId) })),
   dismissCall: (callId) => set((s) => ({ calls: s.calls.filter((c) => c.callId !== callId) })),
+  dismissMissed: (at) => set((s) => ({ missed: s.missed.filter((m) => m.at !== at) })),
   dismissResponse: (at) => set((s) => ({ responses: s.responses.filter((r) => r.at !== at) })),
 }));
 
@@ -64,6 +70,11 @@ function apply(event: LiveEvent) {
         return { contactsVersion: s.contactsVersion + 1 };
       case "call":
         return { calls: [...s.calls.filter((c) => c.callId !== event.callId), event] };
+      case "missed-call":
+        return {
+          missed: [...s.missed.slice(-2), { ...event, at: Date.now() }],
+          sessionsVersion: s.sessionsVersion + 1,
+        };
       case "call-ended":
         // Recents show how it ended.
         return {

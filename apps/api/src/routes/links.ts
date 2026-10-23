@@ -245,6 +245,15 @@ export function linkRoutes(app: FastifyInstance, ctx: Services) {
       .where(and(eq(calls.id, callId), eq(calls.status, "ringing")))
       .returning();
     if (row) callEnded(row.ownerId, row.id);
+    if (row && status !== "declined") {
+      const missed = {
+        type: "missed-call" as const,
+        from: { displayName: row.callerName },
+        sessionId: null,
+      };
+      if (live.isOnline(row.ownerId)) live.send(row.ownerId, missed);
+      else void push.notify(row.ownerId, missed).catch(() => {});
+    }
     return row ?? null;
   };
 

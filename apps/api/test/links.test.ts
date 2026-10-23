@@ -273,6 +273,12 @@ describe("call links", () => {
     const missed = await call();
     await sleep(500); // ringTimeoutMs is 300 in tests
     expect(await state(missed)).toBe("missed");
+    // A closed app hears about it afterwards, like a phone's missed call.
+    expect(
+      pushed.some(
+        (p) => p.payload.type === "missed-call" && p.payload.from.displayName === "Caller",
+      ),
+    ).toBe(true);
   });
 
   it("limit how often a public link can ring", async () => {

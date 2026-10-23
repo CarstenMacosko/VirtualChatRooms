@@ -1820,3 +1820,26 @@ video.mirror {
   gap: 0;
   padding: 4px;
 }
+
+.toast-item {
+  pointer-events: auto;
+}
+.toast-item.missed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffb4b4;
+}
+.toast-item button {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+.toast-action {
+  background: #c9dcff;
+  color: #10213f;
+}
+.toast-close {
+  background: transparent;
+  color: #eef0f4;
+}

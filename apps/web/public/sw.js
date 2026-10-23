@@ -32,6 +32,16 @@ self.addEventListener("push", (event) => {
         data: { url: "/" },
       }),
     );
+  } else if (data.type === "missed-call") {
+    event.waitUntil(
+      self.registration.showNotification(`Missed call from ${data.from.displayName}`, {
+        body: data.sessionId
+          ? "They're still in the call. Tap to join."
+          : "Tap to see your recent calls.",
+        tag: `missed-${data.sessionId ?? data.from.displayName}`,
+        data: { url: data.sessionId ? `/s/${data.sessionId}` : "/" },
+      }),
+    );
   } else if (data.type === "call-ended") {
     event.waitUntil(
       self.registration

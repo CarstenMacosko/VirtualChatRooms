@@ -1,4 +1,4 @@
-import { Phone, PhoneOff, Video } from "lucide-react";
+import { Phone, PhoneMissed, PhoneOff, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiRequestError } from "../lib/api";
 import { useLive } from "../lib/live";
@@ -62,6 +62,8 @@ export function RingOverlay() {
   const dismissRing = useLive((s) => s.dismissRing);
   const dismissCall = useLive((s) => s.dismissCall);
   const dismissResponse = useLive((s) => s.dismissResponse);
+  const missed = useLive((s) => s.missed);
+  const dismissMissed = useLive((s) => s.dismissMissed);
   const notified = useRef(new Set<string>());
   const [error, setError] = useState<string | null>(null);
 
@@ -113,6 +115,13 @@ export function RingOverlay() {
       n.close();
     };
   }, [key, name, detail]);
+
+  // Missed-call notices stay a little longer.
+  useEffect(() => {
+    if (!missed.length) return;
+    const timer = setTimeout(() => dismissMissed(missed[0]!.at), 12_000);
+    return () => clearTimeout(timer);
+  }, [missed, dismissMissed]);
 
   // Answer toasts fade after a few seconds.
   useEffect(() => {
@@ -173,6 +182,29 @@ export function RingOverlay() {
         {responses.map((r) => (
           <p key={r.at} className="toast-item">
             {r.displayName} {RESPONSE_COPY[r.status]}
+          </p>
+        ))}
+        {missed.map((m) => (
+          <p key={m.at} className="toast-item missed">
+            <PhoneMissed size={16} /> Missed call from {m.from.displayName}
+            {m.sessionId && (
+              <button
+                className="toast-action"
+                onClick={() => {
+                  dismissMissed(m.at);
+                  navigate(`/s/${m.sessionId}`);
+                }}
+              >
+                Join
+              </button>
+            )}
+            <button
+              className="toast-close"
+              aria-label="Dismiss"
+              onClick={() => dismissMissed(m.at)}
+            >
+              ×
+            </button>
           </p>
         ))}
       </div>

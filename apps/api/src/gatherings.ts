@@ -73,6 +73,16 @@ export class Gatherings {
     clearTimeout(this.ringTimers.get(key));
     this.ringTimers.delete(key);
     this.deliver(inviteeId, { type: "ring-cancelled", sessionId });
+    if (status === "missed") {
+      const [host] = await this.db
+        .select({ displayName: users.displayName })
+        .from(sessions)
+        .innerJoin(users, eq(users.id, sessions.hostId))
+        .where(eq(sessions.id, sessionId));
+      if (host) {
+        this.deliver(inviteeId, { type: "missed-call", from: host, sessionId });
+      }
+    }
 
     const [row] = await this.db
       .select({ hostId: sessions.hostId, displayName: users.displayName })

@@ -21,12 +21,20 @@ const CallEvent = z.object({
 });
 /** That call stopped ringing: answered on another device, declined, missed or hung up. */
 const CallEndedEvent = z.object({ type: z.literal("call-ended"), callId: z.string() });
+/** A call rang out without anyone answering (shown after the fact, like a phone's missed call). */
+const MissedCallEvent = z.object({
+  type: z.literal("missed-call"),
+  from: z.object({ displayName: z.string() }),
+  /** Still-live gathering you can join, or null for a call-link call. */
+  sessionId: z.string().nullable(),
+});
 
 export const LiveEvent = z.discriminatedUnion("type", [
   RingEvent,
   RingCancelledEvent,
   CallEvent,
   CallEndedEvent,
+  MissedCallEvent,
   z.object({
     type: z.literal("invite-response"),
     sessionId: z.string(),
@@ -56,5 +64,6 @@ export const PushPayload = z.discriminatedUnion("type", [
   RingCancelledEvent,
   CallEvent,
   CallEndedEvent,
+  MissedCallEvent,
 ]);
 export type PushPayload = z.infer<typeof PushPayload>;

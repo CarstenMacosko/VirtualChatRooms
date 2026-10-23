@@ -46,7 +46,12 @@ export class PushNotifier {
                 privateKey: this.env.VAPID_PRIVATE_KEY,
               },
               // A ring is useless once it's over; don't deliver it late.
-              TTL: payload.type === "ring" || payload.type === "call" ? 45 : 60,
+              TTL:
+                payload.type === "ring" || payload.type === "call"
+                  ? 45
+                  : payload.type === "missed-call"
+                    ? 24 * 60 * 60
+                    : 60,
               urgency: "high",
             },
           );
