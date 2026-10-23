@@ -14,6 +14,7 @@ import {
 } from "livekit-client";
 import { selectAudible } from "@vcr/engine";
 import type { MediaGrant } from "@vcr/protocol";
+import { type Access, accessFromError, type Device } from "./access";
 import type { SpatialAudio } from "./SpatialAudio";
 
 export type MediaStatus = "off" | "connecting" | "connected" | "reconnecting" | "failed";
@@ -36,6 +37,8 @@ export interface MediaSnapshot {
   poorConnection: ReadonlyMap<string, "poor" | "lost">;
   /** Your camera's background is blurred (kept across camera off/on). */
   blur: boolean;
+  /** Why your microphone or camera couldn't turn on (cleared once it does). */
+  trouble: Partial<Record<Device, Access>>;
 }
 
 const BLUR_KEY = "vcr.blur";
@@ -79,6 +82,7 @@ export class MediaSession {
     screenSharing: false,
     poorConnection: new Map(),
     blur: rememberedBlur(),
+    trouble: {},
   };
   private listeners = new Set<() => void>();
   private interestTimer: ReturnType<typeof setInterval> | undefined;
@@ -175,19 +179,22 @@ export class MediaSession {
   // --- Publishing ---
 
   async setMic(on: boolean) {
-    try {
-      await this.room.localParticipant.setMicrophoneEnabled(on);
-    } catch (err) {
-      this.update({ error: `Microphone: ${String(err)}` });
-    }
-    this.syncLocal();
+    await this.setDevice("mic", on);
   }
 
   async setCamera(on: boolean) {
+    await this.setDevice("camera", on);
+  }
+
+  private async setDevice(device: Device, on: boolean) {
+    const rest = { ...this.snapshot.trouble };
+    delete rest[device];
     try {
-      await this.room.localParticipant.setCameraEnabled(on);
+      const lp = this.room.localParticipant;
+      await (device === "mic" ? lp.setMicrophoneEnabled(on) : lp.setCameraEnabled(on));
+      this.update({ trouble: rest });
     } catch (err) {
-      this.update({ error: `Camera: ${String(err)}` });
+      this.update({ trouble: on ? { ...rest, [device]: accessFromError(err) } : rest });
     }
     this.syncLocal();
   }

@@ -15,6 +15,7 @@ const OFF: MediaSnapshot = {
   screenSharing: false,
   poorConnection: new Map(),
   blur: false,
+  trouble: {},
 };
 const noopSubscribe = () => () => {};
 

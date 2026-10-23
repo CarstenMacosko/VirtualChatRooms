@@ -31,6 +31,7 @@ import {
   type SceneAssets,
 } from "@vcr/protocol";
 import { api, ApiRequestError } from "../lib/api";
+import type { Device } from "../media/access";
 import { readDeviceProfile } from "../lib/device";
 import { useNow } from "../lib/hooks";
 import { useLive } from "../lib/live";
@@ -40,6 +41,7 @@ import { useFaceTracking } from "../media/useFaceTracking";
 import { type MediaState, useMedia } from "../media/useMedia";
 import type { Autopilot } from "../world/World";
 import { Filmstrip, VideoStage } from "./CallTiles";
+import { AccessHelp, DeviceTrouble } from "./DeviceAccess";
 import { EMOTE_GLYPHS } from "./emotes";
 import { InvitePanel } from "./InvitePanel";
 import { DeviceSelect, type JoinChoice, PreJoin, rememberedDevices, useDevices } from "./PreJoin";
@@ -139,6 +141,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   const [panel, setPanel] = useState<PanelTab | null>(null);
   const [dialog, setDialog] = useState<"invite" | "leave" | "settings" | "room" | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
+  const [fixing, setFixing] = useState<Device | null>(null);
   const autopilotRef = useRef<Autopilot>({ targetId: null });
   // Mirroring your face follows your camera until you choose otherwise.
   const [faceChoice, setFaceChoice] = useState<boolean | null>(null);
@@ -360,6 +363,11 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
             {media.error}
           </p>
         )}
+        {media.status === "connected" && (
+          <div className="call-trouble">
+            <DeviceTrouble trouble={media.trouble} onFix={setFixing} />
+          </div>
+        )}
       </div>
 
       {panel && (
@@ -401,7 +409,26 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
         onPanel={(tab) => setPanel(panel === tab ? null : tab)}
         unread={unread}
         onLeave={() => (isOwner ? setDialog("leave") : props.onExit())}
+        onFix={setFixing}
       />
+
+      {fixing && (
+        <AccessHelp
+          device={fixing}
+          access={media.trouble[fixing] ?? "blocked"}
+          onClose={() => setFixing(null)}
+          onRetry={() => {
+            setFixing(null);
+            if (fixing === "mic") media.setMic(true);
+            else media.setCamera(true);
+          }}
+          onSkip={() => {
+            setFixing(null);
+            if (fixing === "mic") media.setMic(false);
+            else media.setCamera(false);
+          }}
+        />
+      )}
 
       {dialog === "invite" && (
         <InvitePanel sessionId={props.sessionId} onClose={() => setDialog(null)} />
@@ -520,6 +547,8 @@ function ControlBar(props: {
   onPanel(tab: PanelTab): void;
   unread: number;
   onLeave(): void;
+  /** Help for a microphone or camera that couldn't turn on. */
+  onFix(device: Device): void;
 }) {
   const { media } = props;
   const [popup, setPopup] = useState<"emotes" | "more" | null>(null);
@@ -544,24 +573,28 @@ function ControlBar(props: {
 
       <div className="bar-center">
         <button
-          className={`round${media.micOn ? "" : " off"}`}
-          onClick={() => media.setMic(!media.micOn)}
+          className={`round${media.micOn ? "" : " off"}${media.trouble.mic ? " trouble" : ""}`}
+          onClick={() => (media.trouble.mic ? props.onFix("mic") : media.setMic(!media.micOn))}
           disabled={!mediaReady}
           aria-pressed={!media.micOn}
           aria-label={media.micOn ? "Turn off microphone" : "Turn on microphone"}
           title={media.micOn ? "Mute (Ctrl+D)" : "Unmute (Ctrl+D)"}
         >
           {media.micOn ? <Mic size={22} /> : <MicOff size={22} />}
+          {media.trouble.mic && <span className="trouble-dot">!</span>}
         </button>
         <button
-          className={`round${media.cameraOn ? "" : " off"}`}
-          onClick={() => media.setCamera(!media.cameraOn)}
+          className={`round${media.cameraOn ? "" : " off"}${media.trouble.camera ? " trouble" : ""}`}
+          onClick={() =>
+            media.trouble.camera ? props.onFix("camera") : media.setCamera(!media.cameraOn)
+          }
           disabled={!mediaReady}
           aria-pressed={!media.cameraOn}
           aria-label={media.cameraOn ? "Turn off camera" : "Turn on camera"}
           title={media.cameraOn ? "Stop video (Ctrl+E)" : "Start video (Ctrl+E)"}
         >
           {media.cameraOn ? <Video size={22} /> : <VideoOff size={22} />}
+          {media.trouble.camera && <span className="trouble-dot">!</span>}
         </button>
         {touch && media.cameraOn && (
           <button className="round" onClick={media.flipCamera} aria-label="Switch camera">

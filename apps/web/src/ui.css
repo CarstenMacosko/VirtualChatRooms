@@ -838,6 +838,8 @@ button.round.small.active {
   place-content: center;
   justify-items: center;
   gap: 12px;
+  /* Clear of the mic and camera buttons along the bottom. */
+  padding-bottom: 72px;
 }
 .preview-name {
   position: absolute;
@@ -913,6 +915,136 @@ button.round.small.active {
 }
 .prejoin-side .big {
   min-width: 220px;
+}
+
+/* Asking for the camera and microphone, and help when one isn't working. Big tap targets:
+   most people meet these on a phone. */
+.prejoin .preview.asking {
+  aspect-ratio: auto;
+  min-height: 300px;
+  display: grid;
+  place-items: center;
+  background: #1a2f54;
+}
+.preview-ask {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  max-width: 420px;
+  padding: 28px 20px;
+  text-align: center;
+}
+.preview-ask h2 {
+  margin: 0;
+  font-size: 22px;
+  color: #fff;
+}
+.preview-ask p {
+  margin: 0;
+  color: #c9d6ee;
+  line-height: 1.45;
+}
+.ask-icons {
+  display: flex;
+  gap: 14px;
+}
+.ask-icons svg {
+  box-sizing: content-box;
+  padding: 14px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.14);
+  color: #fff;
+}
+.preview-ask button.big {
+  width: 100%;
+  max-width: 340px;
+}
+button.round.trouble,
+.preview-controls button.round.trouble {
+  background: #f5a524;
+  border-color: transparent;
+  color: #241800;
+}
+button.round.trouble:hover:not(:disabled) {
+  background: #e8961a;
+}
+.trouble-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #d93d3d;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+.device-trouble {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+.device-trouble button.trouble-row {
+  justify-content: flex-start;
+  width: 100%;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid #f0d491;
+  background: #fff4dc;
+  color: #6d4c00;
+  font-weight: 600;
+  text-align: left;
+}
+.trouble-row > span:first-of-type {
+  flex: 1;
+}
+.trouble-fix {
+  flex: none;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #6d4c00;
+  color: #fff;
+  font-size: 14px;
+}
+.call-trouble {
+  position: absolute;
+  top: 104px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(460px, calc(100% - 32px));
+  z-index: 7;
+}
+.access-help {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding-top: 4px;
+}
+.access-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.access-help ol {
+  justify-self: stretch;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 24px;
+  font-size: 17px;
+  line-height: 1.45;
+  text-align: left;
+}
+.access-help button.big {
+  width: 100%;
 }
 
 /* --- The call --------------------------------------------------------------------------- */
@@ -1620,6 +1752,10 @@ video.mirror {
 }
 
 @media (max-width: 640px) {
+  /* Room to see yourself and reach the buttons on a phone. */
+  .prejoin .preview {
+    aspect-ratio: 1 / 1;
+  }
   .hide-narrow,
   .bar-left,
   .wide-only {
