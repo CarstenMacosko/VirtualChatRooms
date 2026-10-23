@@ -82,7 +82,9 @@ describe("buildAvatarVrm", () => {
   it("is deterministic and small enough to rebuild on every client", () => {
     const a = buildAvatarVrm(base);
     const b = buildAvatarVrm(structuredClone(base));
-    expect(a).toEqual(b);
+    // Byte loop, not toEqual: deep-equal on ~2 MB of bytes takes seconds on CI.
+    expect(a.byteLength).toBe(b.byteLength);
+    expect(a.every((byte, i) => byte === b[i])).toBe(true);
     expect(a.byteLength).toBeLessThan(2_500_000);
   });
 

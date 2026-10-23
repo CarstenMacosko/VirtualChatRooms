@@ -59,13 +59,13 @@ The Fly address works on its own too, since it serves the same web app.
 
 In the Cloudflare dashboard, open the Pages project that serves the landing page, then go to **Settings → Builds & deployments** and change it to build the app:
 
-| Setting                | Value                                                                                                |
-| ---------------------- | ---------------------------------------------------------------------------------------------------- |
-| Root directory         | `apps/web`                                                                                           |
-| Build command          | `cd ../.. && npm i -g pnpm@9.15.9 && pnpm install --frozen-lockfile && pnpm --filter @vcr/web build` |
-| Build output directory | `dist`                                                                                               |
+| Setting                | Value                                                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Root directory         | `apps/web`                                                                                                                  |
+| Build command          | `cd ../.. && (command -v pnpm \|\| npm i -g pnpm@9.15.9) && pnpm install --frozen-lockfile && pnpm --filter @vcr/web build` |
+| Build output directory | `dist`                                                                                                                      |
 
-Under **Settings → Environment variables** (production):
+Under **Settings → Environment variables** (production, and the same for preview so branch builds work too):
 
 | Variable                     | Value                                                 |
 | ---------------------------- | ----------------------------------------------------- |
@@ -73,6 +73,8 @@ Under **Settings → Environment variables** (production):
 | `SKIP_DEPENDENCY_INSTALL`    | `1` (the build command installs with pnpm itself)     |
 | `BACKEND_ORIGIN`             | `https://virtualchatrooms.fly.dev`                    |
 | `VITE_CLERK_PUBLISHABLE_KEY` | your Clerk publishable key (once you have one; see 4) |
+
+The build image already ships pnpm, so the command only installs it when it's missing (`npm i -g` over an existing pnpm fails with `EEXIST`). Check variable names for stray spaces or tabs when pasting; a name like `VITE_CLERK_PUBLISHABLE_KEY⇥` is silently ignored by the build.
 
 Pages deploys from the branch it watches (usually `main`), so the new setup goes live once this work is merged and pushed. `apps/web/functions/` holds the two forwarding functions. Without `BACKEND_ORIGIN` they answer "not connected yet".
 
