@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VirtualChatRooms: family calls in the same room</title>
+    <meta
+      name="description"
+      content="Family video calls where everyone is in the same room: make a cartoon avatar of yourself, walk around a 3D living room together, and hear each other from where you stand."
+    />
+    <meta name="theme-color" content="#0b0f1c" />
+    <meta property="og:title" content="VirtualChatRooms" />
+    <meta
+      property="og:description"
+      content="Family video calls where everyone is in the same room, as avatars."
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="logo" href="/">VirtualChatRooms</a>
+      <span class="badge">Early preview · invite only</span>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-text">
+          <h1>Family calls where everyone's in the same room.</h1>
+          <p class="lead">
+            Make a cartoon avatar of yourself, walk around a living room together, and talk like
+            you're actually there. Voices come from where people stand, so you can wander over for a
+            quiet chat.
+          </p>
+          <div class="cta">
+            <a class="button" href="#how">How it works</a>
+            <p class="note">
+              Got a link from family? Just open it. Kids can join as guests, no account needed.
+            </p>
+          </div>
+        </div>
+        <figure class="hero-art" aria-hidden="true">
+          <svg viewBox="0 0 420 300" role="img">
+            <defs>
+              <linearGradient id="room" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#2a3563" />
+                <stop offset="1" stop-color="#151b2e" />
+              </linearGradient>
+            </defs>
+            <rect width="420" height="300" rx="28" fill="url(#room)" />
+            <rect x="40" y="40" width="120" height="90" rx="8" fill="#3d5a9e" opacity=".55" />
+            <rect x="0" y="232" width="420" height="68" fill="#5a4030" opacity=".55" />
+            <ellipse cx="210" cy="262" rx="150" ry="18" fill="#c0563f" opacity=".35" />
+            <!-- three friends -->
+            <g transform="translate(95 150)">
+              <rect x="-34" y="52" width="68" height="70" rx="26" fill="#3478d4" />
+              <circle r="46" fill="#e0ac85" />
+              <path d="M-48 -6 a48 48 0 0 1 96 0 q-20 -22 -48 -20 q-30 0 -48 20z" fill="#2b1d16" />
+              <ellipse cx="-16" cy="2" rx="10" ry="12" fill="#fff" />
+              <ellipse cx="16" cy="2" rx="10" ry="12" fill="#fff" />
+              <circle cx="-16" cy="4" r="6" fill="#5a3a22" />
+              <circle cx="16" cy="4" r="6" fill="#5a3a22" />
+              <path
+                d="M-14 24 q14 12 28 0"
+                stroke="#5c1f2a"
+                stroke-width="5"
+                fill="none"
+                stroke-linecap="round"
+              />
+            </g>
+            <g transform="translate(210 132)">
+              <rect x="-36" y="56" width="72" height="80" rx="28" fill="#f2c230" />
+              <circle r="50" fill="#8f5a38" />
+              <circle r="62" cy="-10" fill="#14100e" opacity=".95" />
+              <circle r="50" fill="#8f5a38" />
+              <ellipse cx="-17" cy="0" rx="11" ry="13" fill="#fff" />
+              <ellipse cx="17" cy="0" rx="11" ry="13" fill="#fff" />
+              <circle cx="-17" cy="2" r="6.5" fill="#3b2418" />
+              <circle cx="17" cy="2" r="6.5" fill="#3b2418" />
+              <path d="M-18 24 q18 18 36 0" fill="#5c1f2a" />
+            </g>
+            <g transform="translate(325 152)">
+              <rect x="-32" y="50" width="64" height="68" rx="24" fill="#e5609a" />
+              <circle r="44" fill="#fde3cf" />
+              <path
+                d="M-46 4 a46 46 0 0 1 92 0 v34 q-8 -30 -12 -40 q-34 -10 -68 0 q-6 14 -12 40z"
+                fill="#d1a462"
+              />
+              <ellipse cx="-15" cy="4" rx="9.5" ry="11.5" fill="#fff" />
+              <ellipse cx="15" cy="4" rx="9.5" ry="11.5" fill="#fff" />
+              <circle cx="-15" cy="6" r="6" fill="#3d6c9e" />
+              <circle cx="15" cy="6" r="6" fill="#3d6c9e" />
+              <path
+                d="M-12 24 q12 10 24 0"
+                stroke="#5c1f2a"
+                stroke-width="5"
+                fill="none"
+                stroke-linecap="round"
+              />
+            </g>
+            <g font-size="26">
+              <text x="60" y="70">👋</text>
+              <text x="335" y="80">❤️</text>
+            </g>
+          </svg>
+        </figure>
+      </section>
+
+      <section id="how" class="features">
+        <h2>How it works</h2>
+        <div class="grid">
+          <article>
+            <span class="icon">🧑‍🎨</span>
+            <h3>Your own avatar</h3>
+            <p>
+              Start from a selfie or pick everything yourself. With your camera on, your avatar
+              copies your smiles and surprised faces. Off, it still talks and blinks.
+            </p>
+          </article>
+          <article>
+            <span class="icon">🛋️</span>
+            <h3>A room to share</h3>
+            <p>
+              Walk around a 3D living room together, sit close, wave, dance. Soon you'll be able to
+              scan your own home with your phone and invite everyone over.
+            </p>
+          </article>
+          <article>
+            <span class="icon">🎧</span>
+            <h3>Voices where people stand</h3>
+            <p>
+              People nearby sound close, and people across the room sound far away. Walk over to
+              someone to talk, just like at a real get-together.
+            </p>
+          </article>
+          <article>
+            <span class="icon">📹</span>
+            <h3>Faces, too</h3>
+            <p>
+              A FaceTime-style strip shows everyone's camera beside the room. Pin someone to see
+              them big.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="family">
+        <h2>Built for families</h2>
+        <ul>
+          <li>
+            <strong>Kids join safely.</strong> Accounts are 13+. Younger kids join with a guest link
+            from a parent, and nothing about them is stored.
+          </li>
+          <li>
+            <strong>Your home stays private.</strong> A room only opens while its owner, or someone
+            they trust, is hosting.
+          </li>
+          <li>
+            <strong>Hosts stay in charge.</strong> Mute, turn off cameras, lock the room or ask
+            someone to leave.
+          </li>
+          <li>
+            <strong>Calls ring like calls.</strong> Ring the whole family at once, even when their
+            app is closed.
+          </li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      <p>VirtualChatRooms is in early development. Made for families who live far apart.</p>
+    </footer>
+  </body>
+</html>

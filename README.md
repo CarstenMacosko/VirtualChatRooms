@@ -91,6 +91,7 @@ apps/
   web/              React + R3F client
   api/              REST API: auth, contacts, rooms, sessions, ringing (server-sent events), guest links
   realm/            Colyseus server: session state, host controls, LiveKit tokens; later groups, seats, games
+  landing/          Static landing page (deployed on Cloudflare Pages; see its README)
 services/
   capture/          Python CPU worker: capture provider calls, post-processing, manifest
 packages/

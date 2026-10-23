@@ -1,7 +1,9 @@
 // Starts `livekit-server --dev` for local development (API key "devkey", secret "secret", the
-// defaults in .env.example). If it isn't installed, or something already listens on its port,
-// this says so and idles, so the rest of `pnpm dev` keeps running without voice and video.
+// defaults in .env.example). If .env points at LiveKit Cloud, if livekit-server isn't installed,
+// or if something already listens on its port, this says so and idles, so the rest of
+// `pnpm dev` keeps running.
 import { spawn, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createConnection } from "node:net";
 
 const PORT = 7880;
@@ -22,7 +24,19 @@ const portInUse = () =>
 
 const installed = spawnSync("livekit-server", ["--version"], { stdio: "ignore" }).status === 0;
 
-if (await portInUse()) {
+// With LiveKit Cloud (or any non-local server) in .env, there's nothing to run here.
+let configuredUrl = process.env.LIVEKIT_URL ?? "";
+try {
+  const env = readFileSync(new URL("../../.env", import.meta.url), "utf8");
+  configuredUrl = env.match(/^LIVEKIT_URL=(.*)$/m)?.[1]?.trim() ?? configuredUrl;
+} catch {
+  // no .env: the realm's default (local) applies
+}
+const remote = configuredUrl !== "" && !/localhost|127\.0\.0\.1/.test(configuredUrl);
+
+if (remote) {
+  idle(`[livekit] using ${configuredUrl}; not starting a local server`);
+} else if (await portInUse()) {
   idle(`[livekit] something is already listening on ${PORT}; using it`);
 } else if (!installed) {
   idle(
