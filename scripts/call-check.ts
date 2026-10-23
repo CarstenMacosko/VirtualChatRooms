@@ -4,7 +4,10 @@
  * camera and microphone, a third person joins by guest link, and each checks it actually
  * receives everyone's video frames and audio. Then mute, camera off and ending the call.
  *
- *   pnpm call-check [--headful] [--shots <dir>]
+ *   pnpm call-check [--headful] [--shots <dir>] [--remote <public url>]
+ *
+ * With --remote (e.g. the `pnpm share` link), the guest, the call-link caller and a phone signing
+ * in with a device link all come in through that public address, like other devices would.
  *
  * Needs Google Chrome (or CHROME_PATH). Voice and video go through LIVEKIT_URL from `.env`.
  */
@@ -20,6 +23,11 @@ const CHROME =
 const args = process.argv.slice(2);
 const headful = args.includes("--headful");
 const shotsDir = args.includes("--shots") ? args[args.indexOf("--shots") + 1] : undefined;
+/** Where other devices open links: a public address, or this one. */
+const REMOTE = (args.includes("--remote") ? args[args.indexOf("--remote") + 1] : WEB)!.replace(
+  /\/$/,
+  "",
+);
 const run = Date.now().toString(36).slice(-5);
 
 let failures = 0;
@@ -231,7 +239,7 @@ try {
   const guest = await three.newPage();
   guest.on("dialog", (d) => void d.accept());
   await guest.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
-  await guest.goto(`${WEB}${link.path}`);
+  await guest.goto(`${REMOTE}${link.path}`);
   await guest.waitForSelector("input");
   await guest.type("input", `Guest ${run}`);
   await click(guest, "Continue");
@@ -251,7 +259,7 @@ try {
   ).json()) as { path: string };
   const caller = await four.newPage();
   caller.on("dialog", (d) => void d.accept());
-  await caller.goto(`${WEB}${callLink.path}`);
+  await caller.goto(`${REMOTE}${callLink.path}`);
   await caller.waitForSelector("input");
   await caller.type("input", `Caller ${run}`);
   await click(caller, "Call");
@@ -262,6 +270,24 @@ try {
   await sleep(6000);
   await expectMedia(caller, "caller", `Host ${run}`);
   await expectMedia(host.page, "host", `Caller ${run}`);
+
+  // --- The friend's phone signs in with a one-time link from their computer ---
+  const deviceLink = (await (
+    await fetch(`${API}/me/device-links`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${friend.auth.token}` },
+    })
+  ).json()) as { path: string };
+  const phoneContext = await four.createBrowserContext();
+  const phone = await phoneContext.newPage();
+  await phone.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+  await phone.goto(`${REMOTE}${deviceLink.path}`);
+  await click(phone, `Continue as Friend ${run}`);
+  check("a phone signs in with a device link", await hasText(phone, `Hi Friend`));
+  check("the phone has the same contacts", await hasText(phone, `Host ${run}`));
+  check("the phone sees the live call", await hasText(phone, "Happening now"));
+  await shot(phone, "12-phone-signed-in");
+  await phoneContext.close();
 
   // --- Chat ---
   await click(guest, "Chat");

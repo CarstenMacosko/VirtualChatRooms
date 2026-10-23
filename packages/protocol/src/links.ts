@@ -28,6 +28,7 @@ export type LinkResponse = z.infer<typeof LinkResponse>;
 /** `GET /links/:token`: what a link is, for the page that opens it. */
 export const LinkInfo = z.object({
   kind: LinkKind,
+  ownerId: z.string(),
   ownerName: z.string(),
   /** Call links: whether the owner has the app open right now. */
   ownerOnline: z.boolean(),

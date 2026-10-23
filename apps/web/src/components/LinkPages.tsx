@@ -70,7 +70,7 @@ export function DeviceLinkPage({ token }: { token: string }) {
         <p className="muted">Opening…</p>
       ) : (
         <>
-          <Avatar name={info.ownerName} id={info.ownerName} size={72} />
+          <Avatar name={info.ownerName} id={info.ownerId} size={72} />
           <h1>Sign in as {info.ownerName}?</h1>
           <p className="muted">
             This device gets your contacts and calls. Only continue if this is your own phone or
@@ -155,13 +155,23 @@ export function InvitePage({ token, signInPage }: { token: string; signInPage: R
 
   return (
     <LinkCard>
-      <Avatar name={info.ownerName} id={info.ownerName} size={72} />
+      <Avatar name={info.ownerName} id={info.ownerId} size={72} />
       <h1>{info.ownerName} invited you</h1>
       <p className="muted">
         Join VirtualChatRooms to video call {info.ownerName} and the rest of the family, from any
         phone or computer.
       </p>
-      {auth ? (
+      {auth?.user.id === info.ownerId ? (
+        <>
+          <p className="callout">
+            This is your own invite link. Send it to family and friends: whoever opens it becomes
+            your contact.
+          </p>
+          <button className="primary big" onClick={() => navigate("/")}>
+            Back home
+          </button>
+        </>
+      ) : auth ? (
         <>
           {failure && <p className="error">{failure}</p>}
           <button className="primary big" onClick={() => void accept()} disabled={busy}>
@@ -327,6 +337,7 @@ export function CallMePage({ token }: { token: string }) {
     return (
       <Ringing
         name={info.ownerName}
+        id={info.ownerId}
         onHangUp={() => {
           void api.hangUpCall(state.callId, state.secret).catch(() => {});
           state.audio.dispose();
@@ -338,7 +349,7 @@ export function CallMePage({ token }: { token: string }) {
 
   return (
     <LinkCard>
-      <Avatar name={info.ownerName} id={info.ownerName} size={88} />
+      <Avatar name={info.ownerName} id={info.ownerId} size={88} />
       <h1>Call {info.ownerName}</h1>
       <p className="muted">
         {info.ownerOnline
@@ -378,7 +389,7 @@ export function CallMePage({ token }: { token: string }) {
 }
 
 /** Outgoing call: your own camera behind a "Calling…" card, like FaceTime and Duo. */
-function Ringing({ name, onHangUp }: { name: string; onHangUp(): void }) {
+function Ringing({ name, id, onHangUp }: { name: string; id: string; onHangUp(): void }) {
   const video = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -400,7 +411,7 @@ function Ringing({ name, onHangUp }: { name: string; onHangUp(): void }) {
     <main className="calling-screen">
       <video ref={video} autoPlay playsInline muted className="mirror self-backdrop" />
       <div className="calling-card">
-        <Avatar name={name} id={name} size={96} />
+        <Avatar name={name} id={id} size={96} />
         <h1>{name}</h1>
         <p className="calling-text">
           <Phone size={16} /> Calling…

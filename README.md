@@ -2,12 +2,21 @@
 
 > Working title. A metaverse built only for friends and family. You hang out and video-call as 3D avatars, inside real rooms you've scanned with your own phone, in the browser.
 
-**Status:** Phases 1–3 are working:
+**Status:** Phases 1–3 are working, plus the first slice of Phase 4:
 
-- **The room:** walk around a Gaussian-splat living room with physics, cameras and touch controls.
+- **Calls that look like calls:**
+  - A Meet/FaceTime-style video grid. A 1:1 call fills the screen with you in a corner.
+  - Round controls for mic, camera, flip camera, screen sharing, reactions and raise hand.
+  - People and chat panels, and device settings.
+  - The 3D room is one button away.
+- **Calling across devices:**
+  - Contacts with a call button each, and groups.
+  - Ringing on every device, even when the app is closed.
+  - **Use on your phone** signs another device in with a QR code.
+  - **Invite links** make friends your contacts.
+  - Your personal **call link** lets anyone call you without an account.
+- **The room:** walk around a Gaussian-splat living room with physics, cameras and touch controls. Voices come from each person's avatar.
 - **Your avatar:** a Bitmoji-style avatar you make yourself, starting from a selfie if you like. It copies your expressions from your webcam, or moves its mouth with your voice.
-- **Calling:** add family by friend code and start a gathering that rings them, even when their app is closed.
-- **Voice and video:** spatial voice comes from each person's avatar, with a FaceTime-style video sidebar beside the room.
 - **Host controls:** mute, camera off, remove, lock, co-hosts and hand-over.
 - **Guests:** kids without accounts join by guest link.
 - **Your own room:** import a scan from Scaniverse, Polycam or the KIRI app (`.spz` or `.ply`) and host gatherings in it, with walls you can't walk through.
@@ -110,6 +119,8 @@ scripts/
   smoke.ts          End-to-end check against running servers
   bots.ts           Walking bots for multiplayer/load testing
   make-test-scan.ts A synthetic room scan (.ply/.spz) for trying room import
+  call-check.ts     Real-browser call check: 4 Chromes with fake cameras/mics
+  start-production.mjs  Production entry: API + realm in one container (Dockerfile)
 docs/
   adr/              Architecture decision records
 ```
@@ -205,6 +216,22 @@ With the servers running, check everything end to end:
 ```bash
 pnpm smoke
 ```
+
+Then check calls in real browsers. It needs Google Chrome; four of them run headless with fake cameras and microphones and check that everyone sees and hears everyone:
+
+```bash
+pnpm call-check
+```
+
+Add `--remote <pnpm share link>` to bring the guest, a call-link caller and a phone sign-in in through the public address. Add `--shots <folder>` for screenshots.
+
+**On your phone.** Run `pnpm share` and open its https link on your phone; phones only allow cameras on https pages. Then:
+
+- **Use on your phone** (top right of Home) shows a QR code that signs the phone in as you.
+- **Your call link** lets someone call you from any phone without an account.
+- **Add people** makes an invite link that creates a friend's account.
+
+**Deploying** (one Fly.io machine, with the Cloudflare Pages site as the front door) is step by step in [docs/deploy.md](docs/deploy.md).
 
 Other commands: `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format`, `pnpm build`, and `pnpm db:generate` after changing `apps/api/src/db/schema.ts`.
 

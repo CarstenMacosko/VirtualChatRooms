@@ -159,6 +159,7 @@ export function linkRoutes(app: FastifyInstance, ctx: Services) {
     if (!row) return sendError(reply, 404, "not_found", "This link has expired or was reset.");
     const info: LinkInfo = {
       kind: row.link.kind,
+      ownerId: row.owner.id,
       ownerName: row.owner.displayName,
       ownerOnline: live.isOnline(row.owner.id),
       canCreateAccount: !identity,

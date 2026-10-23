@@ -1536,8 +1536,27 @@ video.mirror {
 /* --- Phones and narrow windows ------------------------------------------------------- */
 
 @media (max-width: 900px) {
+  /* One column on phones, with calling and contacts first (like Duo and FaceTime). */
   .portal-main {
-    grid-template-columns: minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .portal-calls,
+  .portal-side {
+    display: contents;
+  }
+  .portal-main .hero {
+    order: 0;
+  }
+  .portal-main .live-now {
+    order: 1;
+  }
+  .portal-main .contacts {
+    order: 2;
+  }
+  .portal-main > * > .card {
+    order: 3;
   }
   .prejoin {
     grid-template-columns: minmax(0, 1fr);

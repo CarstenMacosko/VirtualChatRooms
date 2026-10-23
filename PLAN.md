@@ -509,6 +509,29 @@ Not done yet, or not measured:
 - **Real devices:** voice, video and push haven't been tested with real cameras and microphones (the test browser blocks them).
 - **Exit criteria not yet measured:** 25 cameras at ≤ 4 Mbps, ≥ 60 fps with 25 people, and invite-to-joined time with real devices.
 
+**Update (2026-10-23): calls rebuilt to feel like a call app, and working across devices** ([ADR 0017](docs/adr/0017-links-bring-in-devices-and-people.md)).
+
+- **Call screen:**
+  - Opens to a video grid: 1:1 fills the screen with you in a corner, a gallery for more, and a shared screen or pinned person on stage.
+  - Round controls for mic, camera, flip camera, screen sharing, reactions and raise hand, plus a 3D room toggle and a menu.
+  - People and chat panels, device settings, and a leave or end dialog.
+  - "Calling…" tiles while people ring, and a "tap to turn on sound" banner when the browser holds audio back.
+  - In the grid, voices are mixed flat and everyone is audible. Each person's avatar still stands in the room for anyone in the room view.
+- **Around the call:** a Meet-style pre-join with device pickers, a Duo-style incoming-call screen, and a Home portal (New call, join by link, contacts and groups with call buttons). Signed-out visitors see a landing page.
+- **Across devices:**
+  - Device sign-in links (QR) and invite links that make accounts without Clerk.
+  - Personal call links that ring you, including by Web Push, and let the caller join as a guest.
+  - Guests no longer have to go through the avatar creator.
+- **Production:**
+  - The API serves the built app and forwards `/realm`, so one Fly.io machine is the whole backend (Dockerfile, `fly.toml`).
+  - The Cloudflare Pages site forwards `/api` and `/realm` to it.
+  - `docs/deploy.md` has the steps. `ADMIN_TOKEN` makes the first sign-in link on a fresh server.
+- **Verified:**
+  - `pnpm call-check` runs four headless Chromes with fake cameras and microphones. Everyone sees video frames and hears audio: host and contact (1:1), a phone-sized guest, and a call-link caller.
+  - It also covers chat, the room view, mute and ending, against the dev server, the production build, and through a `pnpm share` tunnel with a phone signing in by device link.
+- **Found along the way:** a sleeping or locked Mac stops the system audio clock, which silences every Web Audio graph. The check uses Chrome's virtual audio output so it doesn't depend on that.
+- **Not done:** real phones and cameras are still unverified by me (I can't hold a phone), and so is the Fly/Pages deploy (no account yet, and no Docker on this Mac). No call history, no blur or backgrounds, no captions, and no mid-call room switching (Phase 5).
+
 Planned scope:
 
 - LiveKit audio publish/subscribe; token minting in API
