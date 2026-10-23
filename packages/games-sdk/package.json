@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Mini-game plugin contract. Defined in Phase 0, implemented after the MVP.",
+  "description": "Table game contract: pure rules shared by the realm and clients, plus the client half.",
   "exports": {
     ".": "./src/index.ts"
   },

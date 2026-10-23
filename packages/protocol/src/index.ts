@@ -3,6 +3,7 @@ export * from "./auth";
 export * from "./avatar";
 export * from "./events";
 export * from "./face";
+export * from "./games";
 export * from "./links";
 export * from "./manifest";
 export * from "./pose";

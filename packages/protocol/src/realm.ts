@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { SessionId } from "./api";
 import { AvatarRecipe } from "./avatar";
+import {
+  GameActionMessage,
+  GameDragBroadcast,
+  GameDragMessage,
+  GameEndMessage,
+  GameStartMessage,
+} from "./games";
 
 /** Contracts between clients and the Colyseus realm server (PLAN.md § 3.4). */
 
@@ -79,6 +86,12 @@ export const RealmMessage = {
   sit: "sit",
   /** Client → server: get up (releases your seat). */
   stand: "stand",
+  // Table games (games.ts, ADR 0021). Start, action and end change synced state.
+  gameStart: "gameStart",
+  gameAction: "gameAction",
+  gameEnd: "gameEnd",
+  /** Client → server: dragging a held item; server → everyone else: GameDragBroadcast. */
+  gameDrag: "gameDrag",
 } as const;
 
 export const MAX_CHAT_LENGTH = 500;
@@ -106,6 +119,10 @@ export const ClientMessages = {
   // The realm doesn't know the room's seats, only that ids fit the manifest's range.
   [RealmMessage.sit]: z.object({ seatId: z.number().int().min(0).max(0xffff) }),
   [RealmMessage.stand]: z.object({}),
+  [RealmMessage.gameStart]: GameStartMessage,
+  [RealmMessage.gameAction]: GameActionMessage,
+  [RealmMessage.gameEnd]: GameEndMessage,
+  [RealmMessage.gameDrag]: GameDragMessage,
 } as const;
 
 export const NoticeKind = z.enum([
@@ -130,6 +147,7 @@ export const ServerMessages = {
     /** Server time, ms since the epoch. */
     at: z.number(),
   }),
+  [RealmMessage.gameDrag]: GameDragBroadcast,
 } as const;
 export type ChatBroadcast = z.infer<(typeof ServerMessages)["chat"]>;
 /** The realm's answer to `sit`: `ok` false when someone else is sitting there. */
