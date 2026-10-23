@@ -1,4 +1,5 @@
 import { decodePose, decodeRelayedPose } from "@vcr/protocol";
+import type { Vec3 } from "../math";
 import { type InterpolatedPose, RemotePoseBuffer } from "./PoseBuffer";
 
 /**
@@ -9,6 +10,8 @@ import { type InterpolatedPose, RemotePoseBuffer } from "./PoseBuffer";
 export class PoseHub {
   private buffers = new Map<string, RemotePoseBuffer>();
   private sender: ((bytes: Uint8Array) => void) | null = null;
+  /** Your own latest pose, as sent. */
+  private lastSent: Uint8Array | null = null;
   /** Packets that failed to decode, e.g. from a client on a newer wire version. */
   dropped = 0;
   /** Packets received per transport, for the debug overlay. */
@@ -19,7 +22,24 @@ export class PoseHub {
   }
 
   send(bytes: Uint8Array) {
+    this.lastSent = bytes;
     this.sender?.(bytes);
+  }
+
+  /** Where your own avatar stands (what you last sent), or null before anything was sent. */
+  selfPose(): { position: Vec3; yaw: number } | null {
+    if (!this.lastSent) return null;
+    try {
+      const { position, yaw } = decodePose(this.lastSent);
+      return { position, yaw };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Forget where you stood, e.g. when the gathering moves to another room. */
+  forgetSelf() {
+    this.lastSent = null;
   }
 
   /** A packet the realm relayed (sender id + pose). */

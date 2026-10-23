@@ -1,5 +1,6 @@
 import {
   Box,
+  Ear,
   EllipsisVertical,
   Hand,
   House as Home,
@@ -17,12 +18,19 @@ import {
   SwitchCamera,
   UserPlus,
   Users,
+  UsersRound,
   Video,
   VideoOff,
   Volume2,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { PoseSender, SAMPLE_ROOM_LAYOUT, scannedRoomLayout, spawnPointFor } from "@vcr/engine";
+import {
+  PoseSender,
+  SAMPLE_ROOM_LAYOUT,
+  scannedRoomLayout,
+  spawnPointFor,
+  type Vec3,
+} from "@vcr/engine";
 import {
   EmoteId,
   type JoinSessionResponse,
@@ -38,6 +46,7 @@ import { useLive } from "../lib/live";
 import { type RealmStatus, useRealmSession } from "../lib/realm";
 import { SpatialAudio } from "../media/SpatialAudio";
 import { useFaceTracking } from "../media/useFaceTracking";
+import { type Group, useGroups } from "../media/useGroups";
 import { type MediaState, useMedia } from "../media/useMedia";
 import type { Autopilot } from "../world/World";
 import { Filmstrip, VideoStage } from "./CallTiles";
@@ -142,6 +151,8 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   const [dialog, setDialog] = useState<"invite" | "leave" | "settings" | "room" | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
   const [fixing, setFixing] = useState<Device | null>(null);
+  // In the grid your avatar stands still; joining a group from the map moves it here.
+  const [gridSpot, setGridSpot] = useState<{ position: Vec3; yaw: number } | null>(null);
   const autopilotRef = useRef<Autopilot>({ targetId: null });
   // Mirroring your face follows your camera until you choose otherwise.
   const [faceChoice, setFaceChoice] = useState<boolean | null>(null);
@@ -162,7 +173,12 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   const [sceneRoom, setSceneRoom] = useState<{ id: string; name: string } | null>(null);
   const joined = realm.joinInfo;
   if (joined && joined.room.id !== sceneRoom?.id) {
-    if (sceneRoom) setRoomNotice({ name: joined.room.name, at: now });
+    if (sceneRoom) {
+      setRoomNotice({ name: joined.room.name, at: now });
+      // Everyone starts over in the new room.
+      realm.poseHub.forgetSelf();
+      setGridSpot(null);
+    }
     setSceneRoom({ id: joined.room.id, name: joined.room.name });
     setScene(joined.scene);
   }
@@ -172,17 +188,42 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   useEffect(() => {
     if (view === "room" || !selfUserId || scene === undefined) return;
     const layout = scene ? scannedRoomLayout(scene.manifest) : SAMPLE_ROOM_LAYOUT;
-    const spot = spawnPointFor(selfUserId, layout);
+    const spawn = spawnPointFor(selfUserId, layout);
+    // A group you joined from the map, else wherever you were standing (so switching to the
+    // grid keeps your group), else your spawn point.
+    const spot = gridSpot ??
+      realm.poseHub.selfPose() ?? {
+        position: [spawn.position[0], spawn.position[1] - 0.05, spawn.position[2]] as Vec3,
+        yaw: spawn.yaw,
+      };
     const sender = new PoseSender((bytes) => realm.poseHub.send(bytes));
     const timer = setInterval(() => {
       sender.update(performance.now(), {
-        position: [spot.position[0], spot.position[1] - 0.05, spot.position[2]],
+        position: spot.position,
         yaw: spot.yaw,
         loco: LocoState.idle,
       });
     }, 250);
     return () => clearInterval(timer);
-  }, [view, selfUserId, scene, realm.poseHub]);
+  }, [view, selfUserId, scene, realm.poseHub, gridSpot]);
+
+  const groups = useGroups(realm, audio, media.setFocus);
+  const myGroup = groups.groups.find((g) => g.mine);
+  const listeningGroup = groups.groups.find((g) => g.listening);
+  const nameOf = (id: string) => realm.participants.find((p) => p.id === id)?.name ?? "Someone";
+  const listenTo = (group: Group | null) => realm.listenTo(group?.members[0] ?? null);
+  const joinGroup = (group: Group) => {
+    realm.listenTo(null);
+    if (view === "room") {
+      // Walk over; close the panel so you see yourself going.
+      autopilotRef.current.targetId = group.members[0] ?? null;
+      setPanel(null);
+      return;
+    }
+    const layout = scene ? scannedRoomLayout(scene.manifest) : SAMPLE_ROOM_LAYOUT;
+    const spot = groups.spotToJoin(group.id, layout.bounds);
+    if (spot) setGridSpot(spot);
+  };
 
   // Voices are placed in the room view, and straight ahead in the grid.
   useEffect(() => audio.setSpatial(view === "room"), [audio, view]);
@@ -191,6 +232,8 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   }, [audio, props.choice.speaker]);
   const changeView = (next: "grid" | "room") => {
     setView(next);
+    // The room view walks from wherever the grid had you standing.
+    if (next === "room") setGridSpot(null);
     try {
       localStorage.setItem(VIEW_KEY, next);
     } catch {
@@ -202,7 +245,14 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   // builds when that check asks for it.
   useEffect(() => {
     if (!import.meta.env.DEV && !debugHooks()) return;
-    (window as { vcrDebug?: unknown }).vcrDebug = { media, audio, realm };
+    (window as { vcrDebug?: unknown }).vcrDebug = {
+      media,
+      audio,
+      realm,
+      groups,
+      /** Puts your avatar somewhere (video grid only), like walking there. */
+      standAt: (x: number, z: number) => setGridSpot({ position: [x, 0, z], yaw: 0 }),
+    };
   });
 
   // Unread chat while the chat panel is closed.
@@ -331,6 +381,16 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
               <Lock size={14} /> Locked
             </span>
           )}
+          {groups.active && myGroup && myGroup.listeners.length > 0 && (
+            <button className="badge listen-badge" onClick={() => setPanel("groups")}>
+              <Ear size={14} /> {myGroup.listeners.map(nameOf).join(", ")} listening
+            </button>
+          )}
+          {listeningGroup && (
+            <button className="badge listen-badge" onClick={() => listenTo(null)}>
+              <Ear size={14} /> Listening in · Stop
+            </button>
+          )}
           {media.status !== "connected" && media.status !== "off" && (
             <span className="badge warn">
               {media.status === "failed" ? "No audio/video" : "Connecting audio…"}
@@ -381,6 +441,10 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
           onPin={pin}
           canInvite={canInvite}
           onInvite={() => setDialog("invite")}
+          groups={groups}
+          speaking={media.speaking}
+          onListen={listenTo}
+          onJoinGroup={joinGroup}
         />
       )}
 
@@ -684,6 +748,9 @@ function ControlBar(props: {
                 onClick={() => props.onPanel("people")}
               >
                 <Users size={18} /> People ({props.peopleCount})
+              </button>
+              <button role="menuitem" onClick={() => props.onPanel("groups")}>
+                <UsersRound size={18} /> Groups
               </button>
               <button role="menuitem" className="narrow-only" onClick={() => props.onPanel("chat")}>
                 <MessageSquare size={18} /> Chat{props.unread > 0 ? ` (${props.unread} new)` : ""}

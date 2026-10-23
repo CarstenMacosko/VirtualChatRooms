@@ -6,8 +6,8 @@ import type { Vec3 } from "@vcr/engine";
  *   per person: MediaStreamSource → volume (gain) → HRTF panner ─┬→ conversation bus ─────────┐
  *                                                                └→ background bus → lowpass ─┴→ master → compressor → speakers
  *
- * Everyone routes to the conversation bus today. Side conversations will route people outside
- * your group to the background bus, whose level is the "how much of the room you hear" slider.
+ * People in your group (and in a group you're listening in on) route to the conversation bus;
+ * everyone else to the background bus, whose level is the "other groups" slider (useGroups.ts).
  *
  * The listener follows the camera and each panner follows that person's avatar head, both
  * updated every frame by the 3D world. In the video grid there's no room to place voices in, so
@@ -18,6 +18,9 @@ import type { Vec3 } from "@vcr/engine";
 const VOICE_HEIGHT = 1.55;
 
 export type AudioBus = "conversation" | "background";
+
+/** How far away people you're listening in on sound, however far their avatars stand. */
+const NEAR_DISTANCE = 1.5;
 
 /** Crossfade time when someone moves between buses. */
 const BUS_FADE_S = 0.3;
@@ -53,6 +56,8 @@ export class SpatialAudio {
   } | null = null;
   private samples = new Float32Array(256);
   private flat = false;
+  /** Heard as if nearby: the group you're listening in on. */
+  private near = new Set<string>();
   private stateListeners = new Set<() => void>();
 
   constructor() {
@@ -110,7 +115,7 @@ export class SpatialAudio {
     for (const [id, source] of this.sources) {
       source.panner.panningModel = this.flat ? "equalpower" : "HRTF";
       const at = this.positions.get(id);
-      this.placeSource(source, at ?? [0, 0, 0]);
+      this.placeSource(id, source, at ?? [0, 0, 0]);
     }
     if (this.flat) this.applyListener([0, 0, 0], [0, 0, -1]);
   }
@@ -153,7 +158,7 @@ export class SpatialAudio {
       panner.connect(sends[name]).connect(this.buses[name]);
     }
     this.sources.set(id, { element, node, meter, volume, panner, sends });
-    this.placeSource(this.sources.get(id)!, this.positions.get(id) ?? [0, 0, 0]);
+    this.placeSource(id, this.sources.get(id)!, this.positions.get(id) ?? [0, 0, 0]);
   }
 
   removeTrack(id: string) {
@@ -204,12 +209,22 @@ export class SpatialAudio {
 
   /** Moves someone between the conversation and background buses (side conversations). */
   route(id: string, bus: AudioBus) {
+    if (this.routes.get(id) === bus) return;
     this.routes.set(id, bus);
     const source = this.sources.get(id);
     if (!source) return;
     const t = this.context.currentTime;
     for (const name of ["conversation", "background"] as const) {
       source.sends[name].gain.setTargetAtTime(name === bus ? 1 : 0, t, BUS_FADE_S / 3);
+    }
+  }
+
+  /** People heard as if nearby wherever they stand: the group you're listening in on. */
+  setNear(ids: ReadonlySet<string>) {
+    if (ids.size === this.near.size && [...ids].every((id) => this.near.has(id))) return;
+    this.near = new Set(ids);
+    for (const [id, source] of this.sources) {
+      this.placeSource(id, source, this.positions.get(id) ?? [0, 0, 0]);
     }
   }
 
@@ -252,7 +267,7 @@ export class SpatialAudio {
   setPosition(id: string, feet: Vec3) {
     this.positions.set(id, feet);
     const source = this.sources.get(id);
-    if (source) this.placeSource(source, feet);
+    if (source) this.placeSource(id, source, feet);
   }
 
   forget(id: string) {
@@ -267,7 +282,7 @@ export class SpatialAudio {
     void this.context.close();
   }
 
-  private placeSource(source: Source, feet: Vec3) {
+  private placeSource(id: string, source: Source, feet: Vec3) {
     const p = source.panner;
     const t = this.context.currentTime;
     if (this.flat) {
@@ -277,8 +292,18 @@ export class SpatialAudio {
       p.positionZ.setValueAtTime(-1, t);
       return;
     }
-    p.positionX.setValueAtTime(feet[0], t);
-    p.positionY.setValueAtTime(feet[1] + VOICE_HEIGHT, t);
-    p.positionZ.setValueAtTime(feet[2], t);
+    let [x, y, z] = [feet[0], feet[1] + VOICE_HEIGHT, feet[2]];
+    if (this.near.has(id)) {
+      // Same direction, pulled in close.
+      const [lx, ly, lz] = this.listener.position;
+      const d = Math.hypot(x - lx, y - ly, z - lz);
+      if (d > NEAR_DISTANCE) {
+        const k = NEAR_DISTANCE / d;
+        [x, y, z] = [lx + (x - lx) * k, ly + (y - ly) * k, lz + (z - lz) * k];
+      }
+    }
+    p.positionX.setValueAtTime(x, t);
+    p.positionY.setValueAtTime(y, t);
+    p.positionZ.setValueAtTime(z, t);
   }
 }

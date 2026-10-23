@@ -21,7 +21,8 @@
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "bots": "tsx scripts/bots.ts",
     "make-test-scan": "tsx scripts/make-test-scan.ts",
-    "call-check": "tsx scripts/call-check.ts"
+    "call-check": "tsx scripts/call-check.ts",
+    "groups-check": "tsx scripts/groups-check.ts"
   },
   "devDependencies": {
     "@colyseus/sdk": "0.18.5",

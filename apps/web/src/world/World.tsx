@@ -288,12 +288,14 @@ function createSim(
 ): Sim {
   colliders.add(physics);
   const spawn = spawnPointFor(userId, colliders.layout);
+  // Pick up where you were standing (coming back from the video grid keeps your group).
+  const start = poseHub.selfPose() ?? spawn;
   return {
     physics,
     layout: colliders.layout,
     spawn,
-    character: new CharacterController(physics, spawn),
-    rig: new CameraRig(spawn.yaw),
+    character: new CharacterController(physics, start),
+    rig: new CameraRig(start.yaw),
     sender: new PoseSender((bytes) => poseHub.send(bytes)),
     local: new AvatarInstance(recipe),
   };

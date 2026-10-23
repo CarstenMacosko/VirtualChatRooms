@@ -1104,6 +1104,14 @@ button.round.trouble:hover:not(:disabled) {
   background: #6d4c00;
   color: #ffe6a8;
 }
+button.badge.listen-badge {
+  pointer-events: auto;
+  border: none;
+  color: #fff;
+  background: rgb(47 91 234 / 0.85);
+  font-weight: 600;
+  cursor: pointer;
+}
 .call .world-loading {
   color: var(--c-muted);
 }
@@ -1553,6 +1561,109 @@ video.mirror {
   gap: 10px;
   padding: 12px 14px 14px;
   overflow-y: auto;
+}
+
+/* Groups: one circle while everyone's together, smaller circles as people drift apart. */
+.groups-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.group-map {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px 14px;
+  padding: 6px 0;
+}
+.group-circle {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+.group-circle .ring {
+  position: relative;
+  border-radius: 50%;
+  border: 2px dashed var(--line);
+  background: var(--panel-2);
+  transition:
+    width 0.4s ease,
+    height 0.4s ease;
+}
+.group-circle.mine .ring {
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+}
+.group-circle.listening .ring {
+  border: 2px solid #12a150;
+  background: #e3f6ea;
+}
+.group-circle .group-member {
+  position: absolute;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff;
+  transition:
+    left 0.4s ease,
+    top 0.4s ease,
+    box-shadow 0.15s;
+}
+.group-circle .group-member.speaking {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 5px #34d399;
+}
+.group-circle h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 15px;
+}
+.group-circle .listeners {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  color: #12a150;
+}
+.group-actions {
+  display: flex;
+  gap: 8px;
+}
+.side-panel .group-actions button {
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 600;
+  background: var(--panel-2);
+  color: var(--text);
+}
+.side-panel .group-actions button.on {
+  background: #e3f6ea;
+  color: #0c6b35;
+}
+.side-panel .group-actions button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+.background-level {
+  display: grid;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  font-weight: 600;
+}
+.background-level > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.background-level input {
+  width: 100%;
 }
 .people {
   list-style: none;

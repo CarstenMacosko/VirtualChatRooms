@@ -86,6 +86,8 @@ export class MediaSession {
   };
   private listeners = new Set<() => void>();
   private interestTimer: ReturnType<typeof setInterval> | undefined;
+  /** Always subscribed, however far: the group you're listening in on. */
+  private focus = new Set<string>();
   private disposed = false;
 
   /** Called with each pose packet another participant publishes. */
@@ -174,6 +176,13 @@ export class MediaSession {
     clearInterval(this.interestTimer);
     this.listeners.clear();
     await this.room.disconnect();
+  }
+
+  /** Keeps these people's voices subscribed wherever they stand (listening in on their group). */
+  setFocus(ids: ReadonlySet<string>) {
+    if (ids.size === this.focus.size && [...ids].every((id) => this.focus.has(id))) return;
+    this.focus = new Set(ids);
+    this.refreshInterest();
   }
 
   // --- Publishing ---
@@ -355,6 +364,7 @@ export class MediaSession {
     const audible = this.audio.spatial
       ? selectAudible({ x: lx, z: lz }, others)
       : new Set(others.map((o) => o.id));
+    for (const id of this.focus) audible.add(id);
     for (const p of this.room.remoteParticipants.values()) {
       if (onlyIdentity && p.identity !== onlyIdentity) continue;
       const pub = p.getTrackPublication(Track.Source.Microphone) as

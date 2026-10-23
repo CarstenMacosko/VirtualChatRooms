@@ -96,6 +96,13 @@ export class SessionRoom extends Room<{ state: SessionState }> {
       if (p) p.handRaised = raised;
     }),
 
+    [RealmMessage.listenTo]: validate(ClientMessages.listenTo, (client, { target }) => {
+      const p = this.state.participants.get(client.sessionId);
+      if (!p) return;
+      const valid = target && target !== client.sessionId && this.state.participants.has(target);
+      p.listeningTo = valid ? target : "";
+    }),
+
     [RealmMessage.mediaState]: validate(ClientMessages.mediaState, (client, message) => {
       const p = this.state.participants.get(client.sessionId);
       if (!p) return;
@@ -245,6 +252,9 @@ export class SessionRoom extends Room<{ state: SessionState }> {
 
   override onLeave(client: Client) {
     this.state.participants.delete(client.sessionId);
+    for (const p of this.state.participants.values()) {
+      if (p.listeningTo === client.sessionId) p.listeningTo = "";
+    }
     if (this.ended || this.hostAbsence) return;
     const hostPresent = [...this.state.participants.values()].some((p) => isHost(p.role));
     if (!hostPresent) {
