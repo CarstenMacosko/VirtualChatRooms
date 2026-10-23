@@ -10,6 +10,10 @@ swap_size_mb = 1024
 [build]
   dockerfile = "Dockerfile"
 
+# Clerk's publishable key is public (it ships in the web page); the secret key is a Fly secret.
+[build.args]
+  VITE_CLERK_PUBLISHABLE_KEY = "pk_test_Y2FyZWZ1bC1zaGVlcGRvZy01ODQ4LmNsZXJrLmFjY291bnRzLmRldiQ"
+
 [env]
   WEB_ORIGIN = "https://virtualchatrooms.pages.dev,https://virtualchatrooms.fly.dev"
 
