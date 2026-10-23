@@ -25,6 +25,8 @@ export const LiveEvent = z.discriminatedUnion("type", [
     status: InviteStatus,
   }),
   z.object({ type: z.literal("contacts-changed") }),
+  /** One of your rooms changed: a scan finished processing, failed, or was renamed. */
+  z.object({ type: z.literal("rooms-changed") }),
   z.object({ type: z.literal("session-ended"), sessionId: z.string() }),
 ]);
 export type LiveEvent = z.infer<typeof LiveEvent>;

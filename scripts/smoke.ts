@@ -2,11 +2,15 @@
  * End-to-end check against running servers (`pnpm dev` in another terminal):
  * sign-in and age gate → contacts by friend code → start a gathering that rings a contact over
  * the live event stream → both join the realm with tickets → roster, emotes, pose relay, media
- * grant → host controls (mute, co-host, lock, remove a guest) → ending the gathering.
+ * grant → host controls (mute, co-host, lock, remove a guest) → ending the gathering → importing
+ * a room scan, hosting in it with session-scoped asset URLs, and deleting it.
  */
 import { Client, type Room } from "@colyseus/sdk";
+import { writePly } from "../apps/api/src/capture/splatFile";
+import { syntheticRoomSplats } from "../apps/api/test/syntheticRoom";
 import {
   ContactsResponse,
+  CreateScanResponse,
   decodePose,
   decodeRelayedPose,
   DevLoginResponse,
@@ -24,6 +28,7 @@ import {
   RealmCloseCode,
   RealmJoinError,
   RealmMessage,
+  RoomInfo,
   RoomsResponse,
   SessionInfo,
 } from "@vcr/protocol";
@@ -313,6 +318,66 @@ for (let i = 0; i < 20 && status === "live"; i++) {
   ).status;
 }
 check("realm reports the end to the API", status === "ended");
+
+// --- Importing a room scan (Phase 4) ---
+
+const scanFile = writePly(syntheticRoomSplats({ spacing: 0.06 }));
+const created = CreateScanResponse.parse(
+  await (
+    await call("POST", "/rooms/scans", alice.token, {
+      name: `Smoke scan ${run}`,
+      fileName: "smoke-room.ply",
+      size: scanFile.length,
+    })
+  ).json(),
+);
+// Signed URLs are absolute for S3/R2 and API paths for local storage.
+const signed = (url: string) => (url.startsWith("/") ? API + url : url);
+const parts = [];
+for (const part of created.upload.parts) {
+  const start = (part.partNumber - 1) * created.upload.partSize;
+  const res = await fetch(signed(part.url), {
+    method: "PUT",
+    headers: { "content-type": "application/octet-stream" },
+    body: new Uint8Array(scanFile.subarray(start, start + created.upload.partSize)),
+  });
+  parts.push({ partNumber: part.partNumber, etag: res.headers.get("etag") ?? "" });
+}
+await call("POST", `/rooms/${created.room.id}/upload/complete`, alice.token, { parts });
+let scanRoom: RoomInfo | undefined;
+for (let i = 0; i < 100; i++) {
+  const list = RoomsResponse.parse(await (await call("GET", "/rooms", alice.token)).json());
+  scanRoom = list.rooms.find((r) => r.id === created.room.id);
+  if (scanRoom?.status === "ready" || scanRoom?.status === "failed") break;
+  await new Promise((r) => setTimeout(r, 200));
+}
+check(
+  "uploaded scan is processed into a room",
+  scanRoom?.status === "ready",
+  scanRoom?.scan
+    ? `${scanRoom.scan.size.width} × ${scanRoom.scan.size.depth} m, ${scanRoom.scan.size.height} m tall`
+    : (scanRoom?.error ?? scanRoom?.status),
+);
+
+const scanSession = SessionInfo.parse(
+  await (await call("POST", "/sessions", alice.token, { roomId: created.room.id })).json(),
+);
+const scanJoin = JoinSessionResponse.parse(
+  await (await call("POST", `/sessions/${scanSession.id}/join`, alice.token)).json(),
+);
+const splatKey = scanJoin.scene?.manifest.splat.key ?? "";
+const splatUrl = signed(scanJoin.scene?.urls[splatKey] ?? "/missing");
+const splatRes = await fetch(splatUrl);
+const splatBytes = Buffer.from(await splatRes.arrayBuffer());
+check(
+  "joining a scanned room hands out signed asset URLs",
+  splatRes.ok && splatBytes.equals(scanFile),
+  `${scanJoin.scene?.manifest.spawnPoints.length ?? 0} spawn points`,
+);
+await call("POST", `/sessions/${scanSession.id}/end`, alice.token);
+check("asset URLs stop working when the gathering ends", (await fetch(splatUrl)).status === 403);
+const deleted = await call("DELETE", `/rooms/${created.room.id}`, alice.token);
+check("deleting the room removes it", deleted.status === 204);
 
 ringing.close();
 console.log(failures === 0 ? "\nAll smoke checks passed." : `\n${failures} smoke check(s) failed.`);

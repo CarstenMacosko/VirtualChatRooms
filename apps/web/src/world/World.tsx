@@ -1,10 +1,21 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Color, Euler, Group, PerspectiveCamera, Quaternion, Vector3 } from "three";
+import {
+  BufferGeometry,
+  Color,
+  Euler,
+  Group,
+  Mesh,
+  PerspectiveCamera,
+  Quaternion,
+  Vector3,
+} from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   autopilotStep,
   CameraRig,
   CharacterController,
+  collisionToWorld,
   type DeviceProfile,
   forwardFromYaw,
   InputSystem,
@@ -14,11 +25,14 @@ import {
   type PoseHub,
   PoseSender,
   rightFromYaw,
-  SAMPLE_ROOM,
+  type RoomLayout,
+  SAMPLE_ROOM_LAYOUT,
   sampleRoomColliders,
+  scannedRoomLayout,
   type Vec3,
 } from "@vcr/engine";
-import type { AvatarRecipe, ParticipantView, Quat } from "@vcr/protocol";
+import type { AvatarRecipe, ParticipantView, Quat, SceneAssets } from "@vcr/protocol";
+import { assetUrl } from "../lib/api";
 import { EMOTE_DURATION_MS, EMOTE_GLYPHS } from "../components/emotes";
 import { recipeOf } from "../lib/avatar";
 import type { ActiveEmote } from "../lib/realm";
@@ -26,7 +40,7 @@ import type { TrackedFace } from "../media/FaceTracker";
 import { LOCAL_VOICE, type SpatialAudio } from "../media/SpatialAudio";
 import { AVATAR_LAYER, AvatarInstance } from "./AvatarInstance";
 import { headshotTargets } from "./headshots";
-import { RoomSplats } from "./RoomSplats";
+import { type RoomLoadState, RoomSplats } from "./RoomSplats";
 import { TouchControls } from "./TouchControls";
 
 export interface Autopilot {
@@ -53,6 +67,8 @@ export interface WorldProps {
   /** Your face from the webcam while face tracking is on; null otherwise. */
   trackedFaceRef: RefObject<TrackedFace | null>;
   profile: DeviceProfile;
+  /** A scanned room's manifest and signed URLs; null for the built-in sample room. */
+  scene: SceneAssets | null;
   debug: boolean;
 }
 
@@ -61,14 +77,15 @@ export default function World(props: WorldProps) {
   const [sim, setSim] = useState<Sim | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [input] = useState(() => new InputSystem());
-  const [splatCount, setSplatCount] = useState(0);
+  const [roomState, setRoomState] = useState<RoomLoadState>({ state: "loading", progress: null });
+  const splatCount = roomState.state === "ready" ? roomState.splats : 0;
   const anchors = useRef<Anchors>(new Map());
   const labels = useRef<LabelMap>(new Map());
   const stats = useRef<HTMLPreElement>(null);
 
   const self = props.participants.find((p) => p.id === props.selfId);
   const selfUserId = self?.userId;
-  const { poseHub } = props;
+  const { poseHub, scene } = props;
   // Read when the simulation is created; later changes go through setRecipe.
   const selfRecipe = useRef<AvatarRecipe | null>(null);
   useEffect(() => {
@@ -82,23 +99,26 @@ export default function World(props: WorldProps) {
     if (!selfUserId) return;
     let alive = true;
     let created: Sim | null = null;
-    PhysicsWorld.create()
-      .then((physics) => {
+    Promise.all([PhysicsWorld.create(), loadColliders(scene)])
+      .then(([physics, colliders]) => {
         if (!alive) return physics.dispose();
         created = createSim(
           physics,
+          colliders,
           poseHub,
           selfUserId,
           selfRecipe.current ?? recipeOf({ userId: selfUserId, avatar: "" }),
         );
         setSim(created);
       })
-      .catch((err: unknown) => alive && setLoadError(String(err)));
+      .catch((err: unknown) => {
+        if (alive) setLoadError(`Couldn't load this room. ${String(err)}`);
+      });
     return () => {
       alive = false;
       if (created) disposeSim(created);
     };
-  }, [selfUserId, poseHub]);
+  }, [selfUserId, poseHub, scene]);
 
   const attachInput = useCallback(
     (el: HTMLDivElement | null) => {
@@ -119,9 +139,9 @@ export default function World(props: WorldProps) {
         >
           <color attach="background" args={["#0f1424"]} />
           <hemisphereLight args={["#fff8ee", "#6b5a4a", 1.3]} />
-          <ambientLight color={SAMPLE_ROOM.lighting.ambientColor} intensity={0.4} />
+          <ambientLight color={sim.layout.lighting.ambientColor} intensity={0.4} />
           <directionalLight position={[2, 4, 3]} intensity={1.2} />
-          <RoomSplats spacing={props.profile.splatSpacing} onCount={setSplatCount} />
+          <RoomSplats spacing={props.profile.splatSpacing} scene={scene} onState={setRoomState} />
           <Simulation
             sim={sim}
             input={input}
@@ -140,6 +160,13 @@ export default function World(props: WorldProps) {
         </Canvas>
       ) : (
         <div className="world-loading">{loadError ?? "Loading room…"}</div>
+      )}
+      {sim && roomState.state !== "ready" && (
+        <div className="world-loading overlay">
+          {roomState.state === "error"
+            ? roomState.message
+            : `Loading room…${roomState.progress !== null ? ` ${Math.round(roomState.progress * 100)}%` : ""}`}
+        </div>
       )}
 
       <div className="labels" aria-hidden>
@@ -179,18 +206,58 @@ export default function World(props: WorldProps) {
   );
 }
 
-function spawnFor(id: string) {
-  const [base] = SAMPLE_ROOM.spawnPoints;
+/**
+ * The room's collision geometry: the sample room's boxes, or a scan's collision mesh (a GLB in
+ * the splat's file space) moved into the world by the manifest transform.
+ */
+type Colliders = { layout: RoomLayout; add(physics: PhysicsWorld): void };
+
+async function loadColliders(scene: SceneAssets | null): Promise<Colliders> {
+  if (!scene) {
+    return {
+      layout: SAMPLE_ROOM_LAYOUT,
+      add: (physics) => sampleRoomColliders().forEach((box) => physics.addBox(box)),
+    };
+  }
+  const { manifest, urls } = scene;
+  const url = urls[manifest.collision.key];
+  if (!url) throw new Error("the room's collision mesh is missing");
+  const gltf = await new GLTFLoader().loadAsync(assetUrl(url));
+  gltf.scene.updateMatrixWorld(true);
+  const meshes: Array<{ vertices: Float32Array; indices: Uint32Array }> = [];
+  gltf.scene.traverse((o) => {
+    const mesh = o as Mesh<BufferGeometry>;
+    if (!mesh.isMesh) return;
+    const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+    const position = geometry.getAttribute("position");
+    const vertices = collisionToWorld(new Float32Array(position.array), manifest.transform);
+    const index = geometry.getIndex();
+    const indices = index
+      ? Uint32Array.from(index.array)
+      : Uint32Array.from({ length: position.count }, (_, i) => i);
+    meshes.push({ vertices, indices });
+  });
+  if (!meshes.length) throw new Error("the room's collision mesh is empty");
+  return {
+    layout: scannedRoomLayout(manifest),
+    add: (physics) => meshes.forEach((m) => physics.addTrimesh(m.vertices, m.indices)),
+  };
+}
+
+function spawnFor(id: string, layout: RoomLayout) {
   let hash = 0;
   for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
-  // Spread people around the spawn point so they don't appear inside each other.
+  // Each person gets one of the room's spawn points, spread around it so people don't appear
+  // inside each other. Scans only promise ~0.7 m of open floor around a spawn point.
+  const base = layout.spawnPoints[Math.abs(hash >> 9) % layout.spawnPoints.length]!;
+  const spread = layout === SAMPLE_ROOM_LAYOUT ? [0.8, 0.6] : [0.35, 0.35];
   const angle = ((Math.abs(hash) % 360) * Math.PI) / 180;
   const position: Vec3 = [
-    base!.position[0] + Math.sin(angle) * 0.8,
-    base!.position[1] + 0.05,
-    base!.position[2] + Math.cos(angle) * 0.6,
+    base.position[0] + Math.sin(angle) * spread[0]!,
+    base.position[1] + 0.05,
+    base.position[2] + Math.cos(angle) * spread[1]!,
   ];
-  return { position, yaw: base!.yaw };
+  return { position, yaw: base.yaw };
 }
 
 const pitchQuat = (pitch: number): Quat => [Math.sin(pitch / 2), 0, 0, Math.cos(pitch / 2)];
@@ -210,6 +277,7 @@ function headLookFromQuat(q: Quat) {
 
 interface Sim {
   physics: PhysicsWorld;
+  layout: RoomLayout;
   spawn: { position: Vec3; yaw: number };
   character: CharacterController;
   rig: CameraRig;
@@ -228,14 +296,16 @@ interface LoopState {
 
 function createSim(
   physics: PhysicsWorld,
+  colliders: Colliders,
   poseHub: PoseHub,
   userId: string,
   recipe: AvatarRecipe,
 ): Sim {
-  for (const box of sampleRoomColliders()) physics.addBox(box);
-  const spawn = spawnFor(userId);
+  colliders.add(physics);
+  const spawn = spawnFor(userId, colliders.layout);
   return {
     physics,
+    layout: colliders.layout,
     spawn,
     character: new CharacterController(physics, spawn),
     rig: new CameraRig(spawn.yaw),
@@ -383,7 +453,7 @@ function Simulation(props: {
     }
     if (steps === MAX_STEPS_PER_FRAME) l.accumulator = 0; // tab was in the background
     const c = character.current;
-    if (c.position[1] < SAMPLE_ROOM.bounds.min[1] - 5) {
+    if (c.position[1] < sim.layout.bounds.min[1] - 5) {
       character.teleport(sim.spawn.position, sim.spawn.yaw); // fell out of the world
     }
     const alpha = l.accumulator / PHYSICS_DT;

@@ -4,6 +4,7 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -74,19 +75,71 @@ export const contactGroupMembers = pgTable(
 );
 
 export const roomKind = pgEnum("room_kind", ["sample", "scan"]);
+export const roomStatus = pgEnum("room_status", ["uploading", "processing", "ready", "failed"]);
 
-/** A space someone owns. Sample rooms ship with the app; scans arrive in Phase 3. */
-export const rooms = pgTable("rooms", {
-  id: text("id").primaryKey(),
-  ownerId: text("owner_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  kind: roomKind("kind").notNull(),
-  /** Object-storage key of the room manifest; null for sample rooms. */
-  manifestKey: text("manifest_key"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+/** A space someone owns. Sample rooms ship with the app; scans are imported (Phase 4). */
+export const rooms = pgTable(
+  "rooms",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: roomKind("kind").notNull(),
+    status: roomStatus("status").notNull().default("ready"),
+    /** 0–1 while processing. */
+    progress: real("progress"),
+    /** Why processing failed, as a sentence for the owner. */
+    error: text("error"),
+    /** Object-storage key of the room manifest; null for sample rooms and unprocessed scans. */
+    manifestKey: text("manifest_key"),
+    /** What post-processing found (`ScanDetails` in @vcr/protocol). */
+    scan: jsonb("scan"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("rooms_owner").on(t.ownerId)],
+);
+
+export const captureSource = pgEnum("capture_source", ["video", "splat_upload"]);
+export const captureProvider = pgEnum("capture_provider", ["kiri", "byo"]);
+export const captureStatus = pgEnum("capture_status", [
+  "uploading",
+  "queued",
+  "reconstructing",
+  "postprocessing",
+  "ready",
+  "failed",
+]);
+
+/** One run of the capture pipeline for a room (PLAN.md § 3.2, § 4.1). */
+export const captureJobs = pgTable(
+  "capture_jobs",
+  {
+    id: text("id").primaryKey(),
+    roomId: text("room_id")
+      .notNull()
+      .references(() => rooms.id, { onDelete: "cascade" }),
+    source: captureSource("source").notNull(),
+    provider: captureProvider("provider").notNull(),
+    providerTaskId: text("provider_task_id"),
+    /** The uploaded file (video or splat). */
+    sourceKey: text("source_key").notNull(),
+    /** Multipart upload id while the file is uploading. */
+    uploadId: text("upload_id"),
+    /** Expected upload size in bytes. */
+    sourceBytes: real("source_bytes"),
+    status: captureStatus("status").notNull(),
+    progress: real("progress"),
+    error: text("error"),
+    /** Post-processing overrides from the owner (`up`, `heightMeters`). */
+    options: jsonb("options"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("capture_jobs_room").on(t.roomId), index("capture_jobs_status").on(t.status)],
+);
 
 export const sessionStatus = pgEnum("session_status", ["live", "ended"]);
 

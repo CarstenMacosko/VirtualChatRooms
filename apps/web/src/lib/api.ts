@@ -4,6 +4,7 @@ import {
   type AvatarRecipe,
   AvatarResponse,
   ContactsResponse,
+  CreateScanResponse,
   DevLoginResponse,
   ExchangeResponse,
   GuestLinkInfo,
@@ -11,6 +12,7 @@ import {
   HealthResponse,
   JoinSessionResponse,
   MeResponse,
+  RoomInfo,
   RoomsResponse,
   SessionInfo,
   SessionsResponse,
@@ -19,8 +21,12 @@ import {
   type DevLoginRequest,
   type ExchangeRequest,
   type PushSubscriptionRequest,
+  type CompleteUploadRequest,
+  type CreateScanRequest,
   type SaveGroupRequest,
   type StartSessionRequest,
+  type UpdateRoomRequest,
+  type UploadPlan,
 } from "@vcr/protocol";
 import { refreshSession, useAuth } from "./auth";
 
@@ -106,6 +112,12 @@ export const api = {
     request(ContactsResponse, `/contact-groups/${id}`, { method: "DELETE" }),
 
   rooms: () => request(RoomsResponse, "/rooms"),
+  createScan: (body: CreateScanRequest) => request(CreateScanResponse, "/rooms/scans", post(body)),
+  completeUpload: (id: string, body: CompleteUploadRequest) =>
+    request(RoomInfo, `/rooms/${id}/upload/complete`, post(body)),
+  updateRoom: (id: string, body: UpdateRoomRequest) =>
+    request(RoomInfo, `/rooms/${id}`, json("PATCH", body)),
+  deleteRoom: (id: string) => request(NoContent, `/rooms/${id}`, { method: "DELETE" }),
   sessions: () => request(SessionsResponse, "/sessions"),
   session: (id: string) => request(SessionInfo, `/sessions/${id}`),
   startSession: (body: StartSessionRequest) => request(SessionInfo, "/sessions", post(body)),
@@ -130,3 +142,72 @@ export const api = {
       post({ displayName, ...(avatar && { avatar }) }),
     ),
 };
+
+/**
+ * Signed asset and upload URLs are either absolute (S3/R2) or paths on the API (local storage).
+ */
+export const assetUrl = (url: string) => (url.startsWith("/") ? API_BASE + url : url);
+
+const PART_ATTEMPTS = 4;
+
+/** PUTs one part, reporting bytes sent; resolves with the part's ETag. */
+function putPart(url: string, body: Blob, onBytes: (sent: number) => void): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", assetUrl(url));
+    xhr.setRequestHeader("content-type", "application/octet-stream");
+    xhr.upload.onprogress = (e) => onBytes(e.loaded);
+    xhr.onload = () => {
+      const etag = xhr.getResponseHeader("etag");
+      if (xhr.status >= 200 && xhr.status < 300 && etag) resolve(etag);
+      else reject(new ApiRequestError(xhr.status, "upload_failed", "Uploading failed."));
+    };
+    xhr.onerror = () => reject(new ApiRequestError(0, "network", "The connection dropped."));
+    xhr.send(body);
+  });
+}
+
+/**
+ * Uploads a file in the parts the API planned, a few at a time, retrying parts that fail.
+ * `onProgress` gets 0–1.
+ */
+export async function uploadParts(
+  file: Blob,
+  plan: UploadPlan,
+  onProgress: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<CompleteUploadRequest["parts"]> {
+  const sent = new Map<number, number>();
+  const report = () => {
+    let total = 0;
+    for (const v of sent.values()) total += v;
+    onProgress(Math.min(1, total / file.size));
+  };
+  const queue = [...plan.parts];
+  const done: CompleteUploadRequest["parts"] = [];
+  const worker = async () => {
+    for (let part = queue.shift(); part; part = queue.shift()) {
+      const start = (part.partNumber - 1) * plan.partSize;
+      const body = file.slice(start, start + plan.partSize);
+      for (let attempt = 1; ; attempt++) {
+        if (signal?.aborted) throw new ApiRequestError(0, "aborted", "Upload cancelled.");
+        try {
+          const etag = await putPart(part.url, body, (n) => {
+            sent.set(part.partNumber, n);
+            report();
+          });
+          sent.set(part.partNumber, body.size);
+          report();
+          done.push({ partNumber: part.partNumber, etag });
+          break;
+        } catch (err) {
+          sent.set(part.partNumber, 0);
+          if (attempt >= PART_ATTEMPTS) throw err;
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+        }
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  return done.sort((a, b) => a.partNumber - b.partNumber);
+}

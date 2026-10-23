@@ -30,6 +30,20 @@ const Env = z.object({
   VAPID_PUBLIC_KEY: z.string().default(""),
   VAPID_PRIVATE_KEY: z.string().default(""),
   VAPID_SUBJECT: z.string().default("mailto:dev@localhost"),
+  /** Room assets: "fs" keeps them under STORAGE_DIR; "s3" uses the S3_* bucket (R2, SeaweedFS). */
+  STORAGE_DRIVER: z.enum(["fs", "s3"]).default("fs"),
+  STORAGE_DIR: z.string().default(fileURLToPath(new URL("../.data/storage", import.meta.url))),
+  S3_ENDPOINT: z.string().default(""),
+  S3_BUCKET: z.string().default(""),
+  S3_REGION: z.string().default("auto"),
+  S3_ACCESS_KEY_ID: z.string().default(""),
+  S3_SECRET_ACCESS_KEY: z.string().default(""),
+  S3_FORCE_PATH_STYLE: z
+    .string()
+    .optional()
+    .transform((v) => v !== "0" && v !== "false"),
+  /** KIRI Engine (video → room). Without it, only importing existing scans works. */
+  KIRI_API_KEY: z.string().default(""),
 });
 export type Env = z.infer<typeof Env>;
 

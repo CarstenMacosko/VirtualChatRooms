@@ -1,9 +1,10 @@
 import { type FormEvent, useEffect, useState } from "react";
 import type {
+  CaptureOptions,
   ContactsResponse,
   DevLoginResponse,
   MeResponse,
-  RoomSummary,
+  RoomInfo,
   SessionInfo,
 } from "@vcr/protocol";
 import { api, ApiRequestError } from "../lib/api";
@@ -13,6 +14,7 @@ import { useLive } from "../lib/live";
 import { enablePush, pushSupported } from "../lib/push";
 import { navigate } from "../lib/router";
 import { useShareUrl } from "../lib/share";
+import { YourRooms } from "./YourRooms";
 
 const errorText = (err: unknown) =>
   err instanceof ApiRequestError ? err.message : "Something went wrong. Try again.";
@@ -22,17 +24,33 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
   const signOut = useAuth((s) => s.signOut);
   const contactsVersion = useLive((s) => s.contactsVersion);
   const sessionsVersion = useLive((s) => s.sessionsVersion);
+  const roomsVersion = useLive((s) => s.roomsVersion);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [contacts, setContacts] = useState<ContactsResponse | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [rooms, setRooms] = useState<RoomSummary[]>([]);
+  const [rooms, setRooms] = useState<RoomInfo[]>([]);
+  const [capture, setCapture] = useState<CaptureOptions | null>(null);
+  const [roomsFetch, setRoomsFetch] = useState(0);
   const myAvatar = useMyAvatar();
   const shareUrl = useShareUrl();
 
   useEffect(() => {
     void api.me().then(setMe);
-    void api.rooms().then((r) => setRooms(r.rooms));
   }, []);
+  useEffect(() => {
+    void api.rooms().then((r) => {
+      setRooms(r.rooms);
+      setCapture(r.capture);
+    });
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the versions trigger the refetch
+  }, [roomsVersion, roomsFetch]);
+  // Live events report processing progress; poll as a fallback while a scan is being processed.
+  const processing = rooms.some((r) => r.status === "processing");
+  useEffect(() => {
+    if (!processing) return;
+    const timer = setInterval(() => setRoomsFetch((n) => n + 1), 3000);
+    return () => clearInterval(timer);
+  }, [processing]);
   // Live events bump these versions; refetch when they do.
   useEffect(() => {
     void api.contacts().then(setContacts);
@@ -82,7 +100,12 @@ export function Home({ auth }: { auth: DevLoginResponse }) {
             </div>
           )}
           <LiveNow sessions={sessions} myId={auth.user.id} />
-          <StartGathering rooms={rooms} contacts={contacts} />
+          <StartGathering rooms={rooms.filter((r) => r.status === "ready")} contacts={contacts} />
+          <YourRooms
+            rooms={rooms}
+            capture={capture}
+            onChanged={() => setRoomsFetch((n) => n + 1)}
+          />
         </section>
         <section className="panel">
           <Contacts contacts={contacts} onChange={setContacts} />
@@ -164,14 +187,15 @@ function LiveNow({ sessions, myId }: { sessions: SessionInfo[]; myId: string }) 
   );
 }
 
-function StartGathering(props: { rooms: RoomSummary[]; contacts: ContactsResponse | null }) {
+function StartGathering(props: { rooms: RoomInfo[]; contacts: ContactsResponse | null }) {
   const [roomId, setRoomId] = useState("");
   const [everyone, setEveryone] = useState(true);
   const [groupIds, setGroupIds] = useState<Set<string>>(new Set());
   const [userIds, setUserIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const room = roomId || props.rooms[0]?.id;
+  // The sample room is first (the default) unless you picked another; a deleted pick falls back.
+  const room = props.rooms.some((r) => r.id === roomId) ? roomId : props.rooms[0]?.id;
   const people = props.contacts?.contacts ?? [];
   const groups = props.contacts?.groups ?? [];
 

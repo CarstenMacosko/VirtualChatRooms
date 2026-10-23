@@ -149,6 +149,14 @@ GameDefinition  id, version, minPlayers, maxPlayers, bundleUrl
 
 Clients ignore fields they don't know about, and `manifestVersion` controls migrations. The manifest stores storage keys, not URLs. When someone joins a session, the API turns each key into a signed URL that expires when the session ends.
 
+**As built in Phase 4 (manifest v2):**
+
+- The splat and the collision mesh stay in the coordinates of the uploaded file.
+- `transform` gains an explicit file-to-world `rotation` (quaternion) and `translation`: world = translation + metersPerUnit · rotation(file). It also records where the scale came from (`scaleSource`). Bounds, spawn points, seats and zones are in world space (meters, +Y up, floor at 0).
+- `splat.format` (`ply`/`spz`) and `collision.format` (`glb`) are new.
+- Version 1 manifests are migrated on parse.
+- Rescaling a room rewrites only the manifest, never the collision mesh.
+
 ### 3.4 Realtime protocol (`packages/protocol`)
 
 **Pose stream** goes over the LiveKit lossy data channel at 15 Hz while moving and 2 Hz while idle, about 40 bytes per packet, binary-packed:
@@ -548,6 +556,53 @@ Planned scope:
 - Weeks 10–11: CPU post-processing: collision mesh (provider mesh or fallback), floor/scale, crop, spawn, `.spz` + mobile LOD, manifest
 - Week 12: guided recorder, pre-upload checks, resumable upload, room setup screen (floor/scale/crop/spawn), "import a scan" flow with how-to guides for Scaniverse and Polycam
 - **Exit:** ≥ 80% of test videos produce a room rated "good enough to hang out in"; p50 ≤ 15 min.
+
+**Status (2026-10-23): importing a scan works end to end.** It's verified in the browser with synthetic scans, but no real phone scan has been tried yet. What works:
+
+- **Import:** on Home, **Your rooms → Add a room from a scan** takes a `.ply` (standard 3DGS, or SuperSplat's compressed PLY) or an `.spz` (versions 1–3), up to 500 MB. It comes with how-to notes for Scaniverse, Polycam and KIRI, a progress bar, and live status ("getting it ready… 60%", ready, or failed with a reason).
+  - Uploads go in 16 MB parts straight to storage through signed URLs, three at a time, and a failed part is retried.
+  - A sample room is kept as the default, and only ready rooms appear in the gathering's room picker.
+  - Each person can have up to 10 scanned rooms.
+- **Storage** (`apps/api/src/storage`): one `ObjectStorage` interface with two backends.
+  - The local disk (`apps/api/.data/storage`), served by HMAC-signed API routes. Download links are tied to a session and stop working the moment it ends (ADR 0012).
+  - S3-compatible stores (R2, SeaweedFS): `STORAGE_DRIVER=s3` with the `S3_*` settings. Their presigned links can't be revoked, so they last at most 1 hour, and every rejoin issues fresh ones.
+- **Rooms API:**
+  - `POST /rooms/scans` and `POST /rooms/:id/upload/complete` upload a scan. The file's name and size are checked up front, and its contents after upload.
+  - `PATCH /rooms/:id` renames a room, fixes its height (scale) or says which way is up. A new up axis re-runs the processing.
+  - `DELETE /rooms/:id` deletes the files too, and ends a live gathering in that room first.
+  - Join responses (members and guests) carry the manifest plus signed URLs (`JoinSessionResponse.scene`), and `rooms-changed` live events keep Home current.
+  - Jobs are rows in `capture_jobs`.
+- **Post-processing:** TypeScript, CPU only, in-process (`apps/api/src/capture`), not the Python/Open3D worker § 3.1 plans. A 2.6M-splat, 177 MB scan takes about 1 s; the file is streamed and subsampled, never loaded whole.
+  - **Up axis:** the biggest flat layer at the low end of an axis, favoring the shortest dimension, content sitting low, and Y.
+  - **Tilt:** removed with a RANSAC floor-plane fit.
+  - **Walls squared to the axes:** a yaw search.
+  - **Scale:** taken as meters if the room is 1.9–4.5 units tall, otherwise from an assumed 2.5 m ceiling.
+  - **Collision:** an occupancy grid (floor present, nothing at body height) gives the largest walkable area. Walls, furniture (to their measured height), unscanned space and raised floors around it become merged boxes, written as a GLB in file space.
+  - **Spawn points:** up to four, where there's the most open floor.
+- **Tests:**
+  - Synthetic scans of the sample room stored Y-up, Y-down, Z-up and tilted 3°, in meters, at half scale and in centimeters, with and without a ceiling, with floaters. Each recovers the floor, the walls and the 8 × 6 m size.
+  - A Rapier character can't run or jump out of an imported room.
+  - API tests cover upload, permissions, tampered and expired links, session-scoped asset links, rescaling, re-orienting and deletion.
+  - `pnpm smoke` imports a scan and hosts a gathering in it.
+  - `pnpm make-test-scan` writes a synthetic scan.
+- **In the browser:**
+  - A synthetic PLY (upside down, half scale, turned 25°) and an SPZ both render upright at the right size.
+  - Walking and jumping into every wall stops at the wall.
+  - A guest joining by link sees the same room and the host's avatar, with voice on LiveKit Cloud.
+- **Video capture:** the `CaptureProvider` interface exists, with `ByoSplatProvider` and a `KiriProvider` stub. The stub says "needs `KIRI_API_KEY`" and never calls out (`POST /rooms/videos` answers 503). Even with a key it declines until the bake-off confirms KIRI.
+
+Not done yet:
+
+- **Real scans:** a real Scaniverse, Polycam or KIRI export hasn't been tried. The thresholds were tuned on synthetic rooms, and real scans have sparse blank walls, mirrors and open doorways. The **Adjust** fallback (height slider, up axis) covers wrong guesses, but not a bad collision layout.
+- **Packaging:**
+  - No `.spz` conversion or mobile LOD: the file is served as uploaded, and `useMobileLod` is unused.
+  - No floater cropping (floaters are only ignored for collision), no thumbnails, and no lighting estimate.
+- **Room setup screen:** no 3D view for the floor, crop box or spawn point. A room can only be seen inside a gathering.
+- **Storage and jobs:**
+  - The S3 backend is untested against a live bucket (there's no Docker on the dev machine). It needs bucket CORS for PUT/GET and an exposed `ETag` header.
+  - Upload parts can't be re-signed after their 6 h expiry.
+  - Post-processing runs in the API process, one job at a time, and blocks the event loop for up to ~0.6 s on a big scan. It should move to a worker.
+- **Not started:** the guided recorder, pre-upload checks, the KIRI integration and its bake-off, and switching a live session's room (Phase 5).
 
 ### Phase 5: Integration, hardening, beta (weeks 16–22)
 

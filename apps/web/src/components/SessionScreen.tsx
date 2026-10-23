@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { EmoteId, type JoinSessionResponse } from "@vcr/protocol";
+import { EmoteId, type JoinSessionResponse, type SceneAssets } from "@vcr/protocol";
 import { readDeviceProfile } from "../lib/device";
 import { useNow } from "../lib/hooks";
 import { type RealmStatus, useRealmSession } from "../lib/realm";
@@ -82,6 +82,10 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   const selfVideo = realm.selfId ? media.videos.get(realm.selfId) : undefined;
   const face = useFaceTracking(faceOn, selfVideo?.mediaStreamTrack ?? null);
   const now = useNow(250);
+  // The room is loaded once, from the first join; rejoins (reconnects) re-sign the same assets.
+  const [scene, setScene] = useState<SceneAssets | null | undefined>(undefined);
+  const joinedScene = realm.joinInfo?.scene;
+  if (scene === undefined && joinedScene !== undefined) setScene(joinedScene);
 
   const me = realm.participants.find((p) => p.id === realm.selfId);
   const isOwner = me?.role === "owner";
@@ -138,18 +142,23 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
       <main className={`stage${sidebarOpen ? "" : " no-sidebar"}`}>
         <div className="scene">
           <Suspense fallback={<div className="world-loading">Loading room…</div>}>
-            <World
-              participants={realm.participants}
-              selfId={realm.selfId}
-              emotes={realm.emotes}
-              now={now}
-              poseHub={realm.poseHub}
-              audio={audio}
-              autopilotRef={autopilotRef}
-              trackedFaceRef={face.faceRef}
-              profile={profile}
-              debug={debug}
-            />
+            {scene === undefined ? (
+              <div className="world-loading">Loading room…</div>
+            ) : (
+              <World
+                scene={scene}
+                participants={realm.participants}
+                selfId={realm.selfId}
+                emotes={realm.emotes}
+                now={now}
+                poseHub={realm.poseHub}
+                audio={audio}
+                autopilotRef={autopilotRef}
+                trackedFaceRef={face.faceRef}
+                profile={profile}
+                debug={debug}
+              />
+            )}
           </Suspense>
           {pinnedPerson && (
             <div className="pinned-view" onDoubleClick={() => setPinned(null)}>

@@ -1,19 +1,8 @@
 import { z } from "zod";
 import { AvatarRecipe } from "./avatar";
+import { RoomSummary, SceneAssets } from "./rooms";
 
 /** Rooms, live sessions ("gatherings"), invites and guest links (PLAN.md § 4.4). */
-
-export const RoomKind = z.enum(["sample", "scan"]);
-
-export const RoomSummary = z.object({
-  id: z.string(),
-  name: z.string(),
-  kind: RoomKind,
-});
-export type RoomSummary = z.infer<typeof RoomSummary>;
-
-export const RoomsResponse = z.object({ rooms: z.array(RoomSummary) });
-export type RoomsResponse = z.infer<typeof RoomsResponse>;
 
 export const SessionStatus = z.enum(["live", "ended"]);
 export const InviteStatus = z.enum(["ringing", "accepted", "declined", "missed"]);
@@ -49,6 +38,8 @@ export const JoinSessionResponse = z.object({
   sessionId: z.string(),
   role: JoinRole,
   room: RoomSummary,
+  /** A scanned room's manifest and signed asset URLs; null for the built-in sample room. */
+  scene: SceneAssets.nullable().default(null),
   /** Short-lived ticket the realm server accepts for this one session. */
   realmTicket: z.string(),
 });

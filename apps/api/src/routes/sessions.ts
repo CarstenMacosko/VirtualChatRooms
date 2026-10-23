@@ -9,7 +9,6 @@ import {
   InviteMoreRequest,
   type JoinSessionResponse,
   type RealmTicketClaims,
-  type RoomsResponse,
   type SessionsResponse,
   type ShareInfo,
   StartSessionRequest,
@@ -28,6 +27,7 @@ import {
 import { type IdParams, isLocalRequest, parseBody, sendError } from "../http";
 import { acceptedContactIds } from "../social";
 import { avatarOf } from "./avatar";
+import { sceneAssets } from "./rooms";
 
 /** Guest links last the evening, and stop working as soon as the session ends. */
 const GUEST_LINK_TTL_MS = 12 * 60 * 60_000;
@@ -35,7 +35,7 @@ const GUEST_LINK_TTL_MS = 12 * 60 * 60_000;
 type TokenParams = { Params: { token: string } };
 
 export function sessionRoutes(app: FastifyInstance, ctx: Services) {
-  const { db, env, gatherings } = ctx;
+  const { db, env, gatherings, storage } = ctx;
   const auth = { preHandler: requireSession(env.SESSION_TOKEN_SECRET) };
   const me = (req: { session: { sub: string } | null }) => req.session!.sub;
 
@@ -94,26 +94,6 @@ export function sessionRoutes(app: FastifyInstance, ctx: Services) {
     );
   };
 
-  app.get("/rooms", auth, async (req): Promise<RoomsResponse> => {
-    let owned = await db
-      .select()
-      .from(rooms)
-      .where(eq(rooms.ownerId, me(req)));
-    // Everyone gets a sample room to start in; room scans arrive in Phase 3.
-    if (!owned.length) {
-      owned = await db
-        .insert(rooms)
-        .values({
-          id: `rm_${randomUUID()}`,
-          ownerId: me(req),
-          name: "My living room",
-          kind: "sample",
-        })
-        .returning();
-    }
-    return { rooms: owned.map((r) => ({ id: r.id, name: r.name, kind: r.kind })) };
-  });
-
   // Start a gathering in one of your rooms and ring the people you chose.
   app.post("/sessions", auth, async (req, reply) => {
     const body = parseBody(StartSessionRequest, req, reply);
@@ -123,6 +103,9 @@ export function sessionRoutes(app: FastifyInstance, ctx: Services) {
       .from(rooms)
       .where(and(eq(rooms.id, body.roomId), eq(rooms.ownerId, me(req))));
     if (!room) return sendError(reply, 404, "not_found", "You can only host in your own rooms.");
+    if (room.status !== "ready") {
+      return sendError(reply, 409, "room_not_ready", "That room isn't ready yet.");
+    }
 
     // One live gathering per host: starting a new one ends the last.
     const previous = await db
@@ -183,10 +166,12 @@ export function sessionRoutes(app: FastifyInstance, ctx: Services) {
     if (role === "member") {
       await gatherings.respond(info.id, me(req), "accepted", ["ringing", "declined", "missed"]);
     }
+    const row = await liveSession(info.id);
     const response: JoinSessionResponse = {
       sessionId: info.id,
       role,
       room: info.room,
+      scene: row ? await sceneAssets(storage, row.room, info.id) : null,
       realmTicket: await ticket({
         sub: me(req),
         name: req.session!.name,
@@ -334,6 +319,7 @@ export function sessionRoutes(app: FastifyInstance, ctx: Services) {
       sessionId: row.session.id,
       role: "guest",
       room: { id: row.room.id, name: row.room.name, kind: row.room.kind },
+      scene: await sceneAssets(storage, row.room, row.session.id),
       realmTicket: await ticket({
         sub: `gst_${randomUUID()}`,
         name: body.displayName,

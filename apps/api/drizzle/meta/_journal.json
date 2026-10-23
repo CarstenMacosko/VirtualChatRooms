@@ -29,6 +29,13 @@
       "when": 1792681628751,
       "tag": "0003_avatars",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792735286057,
+      "tag": "0004_room_capture",
+      "breakpoints": true
     }
   ]
 }

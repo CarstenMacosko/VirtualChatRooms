@@ -30,6 +30,7 @@ import { buildApp } from "../src/app";
 import { isAllowedParty } from "../src/identity";
 import { createDatabase, type DatabaseHandle } from "../src/db/client";
 import { parseEnv } from "../src/env";
+import { FsStorage } from "../src/storage";
 
 const env = parseEnv({
   NODE_ENV: "test",
@@ -41,7 +42,13 @@ let app: Awaited<ReturnType<typeof buildApp>>;
 
 beforeAll(async () => {
   database = await createDatabase({}); // in-memory PGlite, migrations applied
-  app = await buildApp({ db: database.db, dbKind: database.kind, env, ringTimeoutMs: 300 });
+  app = await buildApp({
+    db: database.db,
+    dbKind: database.kind,
+    env,
+    ringTimeoutMs: 300,
+    storage: new FsStorage(mkdtempSync(join(tmpdir(), "vcr-storage-")), env.SESSION_TOKEN_SECRET),
+  });
 });
 
 afterAll(async () => {
@@ -222,8 +229,9 @@ describe("sessions", () => {
     const a = await person("Roomy");
     const first = RoomsResponse.parse((await a.call("GET", "/rooms")).json());
     expect(first.rooms).toEqual([
-      { id: expect.any(String), name: "My living room", kind: "sample" },
+      expect.objectContaining({ name: "My living room", kind: "sample", status: "ready" }),
     ]);
+    expect(first.capture.video.available).toBe(false);
     const second = RoomsResponse.parse((await a.call("GET", "/rooms")).json());
     expect(second.rooms[0]?.id).toBe(first.rooms[0]?.id);
   });

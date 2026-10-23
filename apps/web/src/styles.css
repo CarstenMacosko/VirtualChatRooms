@@ -349,6 +349,11 @@ input {
   place-items: center;
   color: var(--muted);
 }
+/* Over the canvas while a scanned room streams in. */
+.world-loading.overlay {
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  pointer-events: none;
+}
 .controls-hint {
   position: absolute;
   left: 12px;
@@ -1009,4 +1014,70 @@ label.check {
 }
 .share-banner a {
   color: var(--ok);
+}
+
+/* Your rooms (room scans) */
+.your-rooms {
+  display: grid;
+  gap: 10px;
+}
+.your-rooms h2 {
+  margin-bottom: 0;
+}
+.list li.room-row {
+  display: grid;
+  gap: 8px;
+  justify-content: stretch;
+}
+.room-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.progress > div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+.add-scan,
+.adjust-room {
+  display: grid;
+  gap: 10px;
+}
+.add-scan h3 {
+  margin: 0;
+}
+.add-scan p,
+.adjust-room p {
+  margin: 0;
+}
+.add-scan label,
+.adjust-room label {
+  display: grid;
+  gap: 6px;
+}
+.adjust-room input[type="range"] {
+  width: 100%;
+}
+.howto {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+}
+.howto b,
+.howto i {
+  color: var(--text);
+}
+details summary {
+  cursor: pointer;
+  color: var(--accent);
 }

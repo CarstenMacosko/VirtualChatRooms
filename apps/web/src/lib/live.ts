@@ -17,6 +17,8 @@ interface LiveStore {
   contactsVersion: number;
   /** Bumped when any session you're part of changes. */
   sessionsVersion: number;
+  /** Bumped when one of your rooms changes (a scan finished processing, say). */
+  roomsVersion: number;
   dismissRing(sessionId: string): void;
   dismissResponse(at: number): void;
 }
@@ -27,6 +29,7 @@ export const useLive = create<LiveStore>((set) => ({
   responses: [],
   contactsVersion: 0,
   sessionsVersion: 0,
+  roomsVersion: 0,
   dismissRing: (sessionId) =>
     set((s) => ({ rings: s.rings.filter((r) => r.sessionId !== sessionId) })),
   dismissResponse: (at) => set((s) => ({ responses: s.responses.filter((r) => r.at !== at) })),
@@ -53,6 +56,8 @@ function apply(event: LiveEvent) {
         };
       case "contacts-changed":
         return { contactsVersion: s.contactsVersion + 1 };
+      case "rooms-changed":
+        return { roomsVersion: s.roomsVersion + 1 };
     }
   });
 }
@@ -108,6 +113,7 @@ export function useLiveEvents(token: string) {
           // Catch up on anything missed while disconnected.
           contactsVersion: s.contactsVersion + 1,
           sessionsVersion: s.sessionsVersion + 1,
+          roomsVersion: s.roomsVersion + 1,
         }));
         await readEvents(res.body, (data) => {
           const event = LiveEvent.safeParse(JSON.parse(data));

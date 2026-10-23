@@ -10,8 +10,9 @@
 - **Voice and video:** spatial voice comes from each person's avatar, with a FaceTime-style video sidebar beside the room.
 - **Host controls:** mute, camera off, remove, lock, co-hosts and hand-over.
 - **Guests:** kids without accounts join by guest link.
+- **Your own room:** import a scan from Scaniverse, Polycam or the KIRI app (`.spz` or `.ply`) and host gatherings in it, with walls you can't walk through.
 
-Room scanning (Phase 4) comes next. The full technical design and build roadmap are in [PLAN.md](PLAN.md).
+Recording a video in the app and having it turned into a room (Phase 4) comes next. The full technical design and build roadmap are in [PLAN.md](PLAN.md).
 
 ---
 
@@ -108,6 +109,7 @@ infra/
 scripts/
   smoke.ts          End-to-end check against running servers
   bots.ts           Walking bots for multiplayer/load testing
+  make-test-scan.ts A synthetic room scan (.ply/.spz) for trying room import
 docs/
   adr/              Architecture decision records
 ```
@@ -149,6 +151,14 @@ pnpm bots 10
 ```
 
 Add a number of seconds to keep them longer (`pnpm bots 24 300`), or a copied guest link to pick a specific gathering.
+
+**Your own room.** On Home, **Your rooms → Add a room from a scan** uploads a Gaussian splat exported from Scaniverse, Polycam or the KIRI app. The API finds the floor, which way is up, the scale and the walls, then the room appears in the gathering's room picker. **Adjust** fixes the size or orientation if the guess is off. No scan handy? This writes a synthetic one (the sample living room, stored upside down at half scale and turned, the way some tools export):
+
+```bash
+pnpm make-test-scan room.ply --flip --scale 0.5 --turn 25
+```
+
+Uploads are stored under `apps/api/.data/storage` by default. Set `STORAGE_DRIVER=s3` and the `S3_*` settings in `.env` to use Cloudflare R2 or SeaweedFS instead.
 
 **Real accounts (Clerk).** To sign in with email or Google instead of the development sign-in:
 
@@ -204,7 +214,7 @@ Other commands: `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format`, `pnpm
 pnpm infra:up
 ```
 
-Then set `DATABASE_URL=postgres://vcr:vcr@localhost:5432/vcr` in `.env` to use real Postgres. The compose file also runs LiveKit, in place of the Homebrew one. Room capture (Phase 4) needs storage and, optionally, a KIRI Engine API key.
+Then set `DATABASE_URL=postgres://vcr:vcr@localhost:5432/vcr` in `.env` to use real Postgres. The compose file also runs LiveKit, in place of the Homebrew one. Its SeaweedFS can hold room scans (`STORAGE_DRIVER=s3`); turning videos into rooms will need a KIRI Engine API key.
 
 ## Platform support targets
 

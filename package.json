@@ -19,7 +19,8 @@
     "db:generate": "pnpm --filter @vcr/api db:generate",
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
-    "bots": "tsx scripts/bots.ts"
+    "bots": "tsx scripts/bots.ts",
+    "make-test-scan": "tsx scripts/make-test-scan.ts"
   },
   "devDependencies": {
     "@colyseus/sdk": "0.18.5",
