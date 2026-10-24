@@ -300,6 +300,10 @@ input {
   pointer-events: none;
   color: var(--bad);
 }
+/* Near a couch by a game table, sit above the table's prompt rather than on it. */
+.world:has(.table-prompt) .seat-prompt:not(.touch) {
+  bottom: 80px;
+}
 
 /* Table games (jigsaw): the prompt near a table, the start form, the puzzle view's controls */
 .table-games-hud {
