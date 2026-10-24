@@ -1,8 +1,16 @@
-import { SparkRenderer, SplatFileType, SplatMesh } from "@sparkjsdev/spark";
+import {
+  SparkRenderer,
+  SplatEdit,
+  SplatEditRgbaBlendMode,
+  SplatEditSdf,
+  SplatEditSdfType,
+  SplatFileType,
+  SplatMesh,
+} from "@sparkjsdev/spark";
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Color, Quaternion, Vector3 } from "three";
-import { buildSampleRoomSplats } from "@vcr/engine";
+import { buildSampleRoomSplats, tableClearances } from "@vcr/engine";
 import type { SceneAssets } from "@vcr/protocol";
 import { assetUrl } from "../lib/api";
 
@@ -66,6 +74,21 @@ export function RoomSplats(props: {
     });
   }, [spacing, scene, onState]);
 
+  // Hide the scan's clutter over game tables, so it doesn't poke through the puzzle.
+  const clear = useMemo(() => {
+    const sdfs = tableClearances(scene?.manifest.tables ?? []).map((c) => {
+      const sdf = new SplatEditSdf({ type: SplatEditSdfType.BOX, opacity: 0 });
+      sdf.position.set(...c.center);
+      sdf.rotation.set(0, c.yaw, 0);
+      sdf.scale.set(...c.half); // a box's half extents
+      return sdf;
+    });
+    if (!sdfs.length) return null;
+    const edit = new SplatEdit({ rgbaBlendMode: SplatEditRgbaBlendMode.MULTIPLY, sdfs });
+    for (const sdf of sdfs) edit.add(sdf);
+    return edit;
+  }, [scene]);
+
   useEffect(() => () => mesh.dispose(), [mesh]);
   useEffect(() => () => spark.dispose(), [spark]);
 
@@ -73,6 +96,7 @@ export function RoomSplats(props: {
     <>
       <primitive object={spark} />
       <primitive object={mesh} />
+      {clear && <primitive object={clear} />}
     </>
   );
 }
