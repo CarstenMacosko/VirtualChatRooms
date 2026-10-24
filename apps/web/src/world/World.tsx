@@ -7,6 +7,7 @@ import {
   CHARACTER,
   CharacterController,
   type DeviceProfile,
+  emptyIntents,
   forwardFromYaw,
   InputSystem,
   lerp,
@@ -30,6 +31,7 @@ import {
   type Quat,
   type SceneAssets,
 } from "@vcr/protocol";
+import type { TableGamesSync } from "../lib/tableGames";
 import { EMOTE_DURATION_MS, EMOTE_GLYPHS } from "../components/emotes";
 import { recipeOf } from "../lib/avatar";
 import type { ActiveEmote } from "../lib/realm";
@@ -37,6 +39,10 @@ import type { TrackedFace } from "../media/FaceTracker";
 import { LOCAL_VOICE, type SpatialAudio } from "../media/SpatialAudio";
 import { AVATAR_LAYER, AvatarInstance } from "./AvatarInstance";
 import { addRoomColliders, loadRoomCollision } from "./collision";
+import type { CameraFocus } from "./games/focus";
+import { TableGamesHud } from "./games/TableGamesHud";
+import { TableGamesLayer } from "./games/TableGamesLayer";
+import { createTableGamesUi, useUi } from "./games/ui";
 import { headshotTargets } from "./headshots";
 import { RoomMesh } from "./RoomMesh";
 import { type RoomLoadState, RoomSplats } from "./RoomSplats";
@@ -62,6 +68,8 @@ type LabelMap = Map<string, HTMLDivElement>;
 const LABEL_HEIGHT = 2.0;
 /** How much lower a seated person's label sits. */
 const SEATED_LABEL_DROP = 0.45;
+/** What input amounts to while a table game holds it. */
+const NO_INTENTS = emptyIntents();
 const MAX_STEPS_PER_FRAME = 5;
 
 export interface WorldProps {
@@ -82,6 +90,8 @@ export interface WorldProps {
   debug: boolean;
   /** Seat claims through the realm (ADR 0020); without it you can still sit, unshared. */
   seating?: SeatingLink;
+  /** Jigsaws and other games on the room's tables (ADR 0021); omitted, tables stay plain. */
+  games?: TableGamesSync;
 }
 
 /** The shared 3D room: splats, physics, your avatar, everyone else, cameras and name labels. */
@@ -95,6 +105,12 @@ export default function World(props: WorldProps) {
   const labels = useRef<LabelMap>(new Map());
   const stats = useRef<HTMLPreElement>(null);
   const [seatPrompt, setSeatPrompt] = useState<SeatPrompt>(null);
+  const [tableUi] = useState(createTableGamesUi);
+  const playingTable = useUi(tableUi, "playing") !== null;
+  // The joystick unmounts while playing; don't leave you walking when you come back.
+  useEffect(() => {
+    if (playingTable) input.setTouchMove(0, 0);
+  }, [playingTable, input]);
 
   const self = props.participants.find((p) => p.id === props.selfId);
   const selfUserId = self?.userId;
@@ -175,7 +191,20 @@ export default function World(props: WorldProps) {
             splatCount={splatCount}
             seating={props.seating}
             onSeatPrompt={setSeatPrompt}
+            focus={tableUi.focus}
           />
+          {props.games && (
+            <TableGamesLayer
+              tables={sim.layout.tables}
+              sync={props.games}
+              ui={tableUi}
+              selfId={props.selfId ?? ""}
+              character={sim.character}
+              participants={props.participants}
+              ceiling={sim.layout.bounds.max[1]}
+              lowPower={props.profile.tier === "low"}
+            />
+          )}
         </Canvas>
       ) : (
         <div className="world-loading">{loadError ?? "Loading room…"}</div>
@@ -212,8 +241,18 @@ export default function World(props: WorldProps) {
         })}
       </div>
 
-      {sim && <SeatPromptView prompt={seatPrompt} touch={props.profile.touch} input={input} />}
-      {props.profile.touch ? (
+      {sim && !playingTable && (
+        <SeatPromptView prompt={seatPrompt} touch={props.profile.touch} input={input} />
+      )}
+      {sim && props.games && (
+        <TableGamesHud
+          tables={sim.layout.tables}
+          sync={props.games}
+          ui={tableUi}
+          selfId={props.selfId ?? ""}
+        />
+      )}
+      {playingTable ? null : props.profile.touch ? (
         <TouchControls input={input} />
       ) : (
         <p className="controls-hint">
@@ -332,6 +371,8 @@ function Simulation(props: {
   splatCount: number;
   seating: SeatingLink | undefined;
   onSeatPrompt(prompt: SeatPrompt): void;
+  /** While playing at a table, it holds the camera and input. */
+  focus?: CameraFocus;
 }) {
   const { sim, input, poseHub, audio, autopilotRef, trackedFaceRef, selfId, anchors, labels } =
     props;
@@ -402,7 +443,8 @@ function Simulation(props: {
     const l = loop.current;
 
     // 1. Input → intents → camera and movement command.
-    const intents = input.sample(dt);
+    const sampled = input.sample(dt);
+    const intents = props.focus?.holdsInput ? NO_INTENTS : sampled;
     rig.applyIntents(intents);
     if (intents.jump) l.pendingJump = true;
     const firstPerson = rig.mode === "first";
@@ -494,12 +536,13 @@ function Simulation(props: {
       ...(head && { head }),
       ...(tracked && { face: tracked.blendshapes }),
     });
-    const cam = rig.compute(
+    const follow = rig.compute(
       feet,
       (origin, dir, max) => physics.castRay(origin, dir, max, character.collider),
       dt,
       seatedCameraBody(character.seat?.seat.height ?? 0, c.sitAmount),
     );
+    const cam = props.focus?.view(follow, dt) ?? follow;
     state.camera.position.set(...cam.position);
     state.camera.lookAt(...cam.lookAt);
     if (audio) {

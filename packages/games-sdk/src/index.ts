@@ -124,6 +124,8 @@ export interface TableSceneProps<Setup, Action> {
   self: string;
   /** Whether this client is focused on the table (e.g. the puzzle view). */
   playing: boolean;
+  /** A phone or weak GPU: use coarser shapes and smaller textures. */
+  lowPower: boolean;
   /** Sends a move to the realm. */
   act(action: Action): void;
   /** Relays a live drag of a held item to everyone else; the host throttles it. */
@@ -148,12 +150,25 @@ export interface TableStartProps<Options> {
   cancel(): void;
 }
 
+/** What the playing view must show of a table. */
+export interface TableViewArea {
+  /** Half extents [x, z] (table-local meters) of everything in play. */
+  bounds: [number, number];
+  /** Size of the smallest thing people pick up, meters: sets how close the view zooms. */
+  piece: number;
+}
+
 export interface TableGameClient<Setup, Options, Action> {
+  /** Shown on buttons, e.g. "puzzle" in "Play puzzle". */
+  noun: string;
   /** 3D content on the tabletop, mounted in the GameLayer. */
   Scene: Component<TableSceneProps<Setup, Action>>;
   /** 2D overlay while playing. */
   Hud?: Component<TableHudProps<Setup, Action>>;
   Start: Component<TableStartProps<Options>>;
+  /** One line about how the game is going, e.g. "12 of 48 pieces in place". */
+  status(setup: Setup, items: readonly TableItem[]): string;
+  viewArea(setup: Setup): TableViewArea;
 }
 
 /** Rules plus client: everything one table game ships. */

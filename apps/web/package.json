@@ -21,6 +21,8 @@
     "@sparkjsdev/spark": "2.3.1",
     "@vcr/avatar": "workspace:*",
     "@vcr/engine": "workspace:*",
+    "@vcr/games": "workspace:*",
+    "@vcr/games-sdk": "workspace:*",
     "@vcr/protocol": "workspace:*",
     "livekit-client": "2.22.3",
     "lucide-react": "1.60.0",

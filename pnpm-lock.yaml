@@ -181,6 +181,12 @@ importers:
       '@vcr/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@vcr/games':
+        specifier: workspace:*
+        version: link:../../packages/games
+      '@vcr/games-sdk':
+        specifier: workspace:*
+        version: link:../../packages/games-sdk
       '@vcr/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

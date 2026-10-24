@@ -5,6 +5,8 @@ import {
   type ChatBroadcast,
   type EmoteBroadcast,
   type EmoteId,
+  type GameDragBroadcast,
+  type GameTableView,
   type JoinSessionResponse,
   type MediaGrant,
   type Notice,
@@ -17,6 +19,7 @@ import {
   type SitResult,
 } from "@vcr/protocol";
 import { ApiRequestError } from "./api";
+import { TableGamesSync } from "./tableGames";
 
 /** The realm server: same origin as the page (proxied at /realm) unless configured otherwise. */
 const REALM_URL = import.meta.env.VITE_REALM_URL || `${window.location.origin}/realm`;
@@ -40,6 +43,7 @@ interface SyncedState {
   locked: boolean;
   /** Seat id → realm session id of whoever sits there. */
   seats?: Record<string, string>;
+  games?: Record<string, GameTableView>;
 }
 
 export interface ActiveEmote {
@@ -94,6 +98,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
   const [chat, setChat] = useState<ChatBroadcast[]>([]);
   const roomRef = useRef<Room | null>(null);
   const [poseHub] = useState(() => new PoseHub());
+  const [games] = useState(() => new TableGamesSync());
   // Bumping `attempt` re-runs the effect, which rejoins after a drop or failed join.
   const [attempt, setAttempt] = useState(0);
   const failures = useRef(0);
@@ -129,11 +134,22 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
       setSelfId(room.sessionId);
       setStatus("connected");
       setError(null);
+      games.connect((type, message) => room.send(type, message));
+      // Table games patch state often (every piece moved); only re-render people when they change.
+      let peopleJson = "";
       room.onStateChange((state) => {
         const json = (state as { toJSON(): SyncedState }).toJSON();
-        setParticipants(Object.entries(json.participants ?? {}).map(([id, p]) => ({ id, ...p })));
+        const people = JSON.stringify(json.participants ?? {});
+        if (people !== peopleJson) {
+          peopleJson = people;
+          setParticipants(Object.entries(json.participants ?? {}).map(([id, p]) => ({ id, ...p })));
+        }
         setLocked(json.locked);
         setSeats(json.seats ?? {});
+        games.ingest(json.games);
+      });
+      room.onMessage(RealmMessage.gameDrag, (message: GameDragBroadcast) => {
+        games.ingestDrag(message);
       });
       room.onMessage(RealmMessage.pose, (bytes: Uint8Array) => {
         poseHub.ingest(bytes, performance.now());
@@ -163,6 +179,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
         if (cancelled) return; // we left on purpose
         roomRef.current = null;
         poseHub.clear();
+        games.disconnect();
         setParticipants([]);
         setSeats({});
         setMediaGrant(null);
@@ -187,7 +204,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
       roomRef.current = null;
     };
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `attempt` triggers the rejoin
-  }, [sessionId, attempt, poseHub]);
+  }, [sessionId, attempt, poseHub, games]);
 
   const send = useCallback(<T>(type: string, message: T) => {
     roomRef.current?.send(type, message);
@@ -255,6 +272,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
     notices,
     chat,
     poseHub,
+    games,
     ...actions,
   };
 }

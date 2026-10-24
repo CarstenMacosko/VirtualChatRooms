@@ -288,6 +288,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
                   profile={profile}
                   debug={debug}
                   seating={seating}
+                  games={realm.games}
                 />
               </Suspense>
             )}

@@ -301,6 +301,210 @@ input {
   color: var(--bad);
 }
 
+/* Table games (jigsaw): the prompt near a table, the start form, the puzzle view's controls */
+.table-games-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.table-games-hud button,
+.table-start-backdrop,
+.table-prompt {
+  pointer-events: auto;
+}
+.table-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 8px 8px 8px 14px;
+  border-radius: 999px;
+  background: rgb(16 18 22 / 0.78);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+  animation: fade-in 0.2s ease-out;
+}
+.table-prompt button {
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.table-prompt-text {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.table-start-backdrop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 56px 16px 16px;
+  background: rgb(10 14 22 / 0.55);
+}
+.puzzle-start {
+  width: min(560px, 100%);
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: #1e2128;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.5);
+}
+.puzzle-start h3 {
+  margin: 0 0 12px;
+}
+.puzzle-pictures {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.table-games-hud button.puzzle-picture {
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 12px;
+  background: #2e323a;
+  border: 2px solid transparent;
+  font-size: 13px;
+  font-weight: 500;
+}
+.table-games-hud button.puzzle-picture.selected {
+  border-color: #6ea8fe;
+}
+.puzzle-thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.puzzle-counts {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.puzzle-counts button {
+  flex: 1;
+  border-radius: 999px;
+  padding: 8px 6px;
+}
+.table-play-hud {
+  position: absolute;
+  inset: 0;
+}
+.table-back {
+  position: absolute;
+  top: 60px;
+  left: 16px;
+  border-radius: 999px;
+  background: rgb(16 18 22 / 0.78);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.35);
+}
+.table-zoom {
+  position: absolute;
+  left: 16px;
+  top: 112px;
+  display: grid;
+  gap: 8px;
+}
+.table-zoom button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgb(16 18 22 / 0.78);
+}
+.table-play-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: rgb(16 18 22 / 0.78);
+  backdrop-filter: blur(6px);
+}
+.table-play-bottom .row {
+  justify-content: center;
+}
+.puzzle-hud {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.puzzle-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.puzzle-bar {
+  width: 120px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.15);
+  overflow: hidden;
+}
+.puzzle-bar > div {
+  height: 100%;
+  background: #3ecf8e;
+  transition: width 0.3s;
+}
+.puzzle-done {
+  margin: 0;
+  font-weight: 700;
+  color: #ffd166;
+  animation: pop 0.3s ease-out;
+}
+.puzzle-reference {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(280px, 70vw);
+  padding: 4px;
+  border-radius: 10px;
+  background: rgb(16 18 22 / 0.85);
+}
+.table-holders {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.holder-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 50%;
+}
+.holder-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #10131a;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Shared bits */
 .row {
   display: flex;
