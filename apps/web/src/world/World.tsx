@@ -4,6 +4,7 @@ import { Color, Euler, Group, PerspectiveCamera, Quaternion, Vector3 } from "thr
 import {
   autopilotStep,
   CameraRig,
+  CHARACTER,
   CharacterController,
   type DeviceProfile,
   forwardFromYaw,
@@ -22,7 +23,13 @@ import {
   spawnPointFor,
   type Vec3,
 } from "@vcr/engine";
-import type { AvatarRecipe, ParticipantView, Quat, SceneAssets } from "@vcr/protocol";
+import {
+  type AvatarRecipe,
+  LocoState,
+  type ParticipantView,
+  type Quat,
+  type SceneAssets,
+} from "@vcr/protocol";
 import { EMOTE_DURATION_MS, EMOTE_GLYPHS } from "../components/emotes";
 import { recipeOf } from "../lib/avatar";
 import type { ActiveEmote } from "../lib/realm";
@@ -298,6 +305,11 @@ function createSim(
 }
 
 function disposeSim(sim: Sim) {
+  // Leaving the room view while seated: stand up in front of the seat and tell everyone.
+  const stood = sim.seating.leave((feet) =>
+    sim.physics.capsuleFits(feet, CHARACTER.radius, CHARACTER.height, sim.character.collider),
+  );
+  if (stood) sim.sender.update(performance.now(), { ...stood, loco: LocoState.idle });
   sim.local.dispose();
   sim.character.dispose();
   sim.physics.dispose();

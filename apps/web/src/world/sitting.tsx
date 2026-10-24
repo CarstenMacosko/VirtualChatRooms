@@ -2,10 +2,12 @@ import {
   type CharacterController,
   type InputSystem,
   type Intents,
+  inFrontOfSeat,
   type InterpolatedPose,
   pickSeat,
   type RoomLayout,
   seatFloorPoint,
+  standSpot,
   type Vec3,
 } from "@vcr/engine";
 import { LocoState, type Seat } from "@vcr/protocol";
@@ -43,17 +45,33 @@ export class LocalSeating {
   /** The seat the realm gave you, until you get up. */
   private claimed: number | null = null;
   private checkedAt = 0;
+  /** The realm link from the last frame, for `leave`. */
+  private link: SeatingLink | undefined;
+  private disposed = false;
 
   constructor(
     private readonly character: CharacterController,
     private readonly layout: RoomLayout,
-  ) {}
+  ) {
+    // End-to-end checks put you in front of a seat (dev server only).
+    if (import.meta.env.DEV) {
+      (window as { vcrSeating?: unknown }).vcrSeating = {
+        seats: layout.seats,
+        standBefore: (seatId: number) => {
+          const seat = layout.seats.find((s) => s.id === seatId);
+          if (seat) character.teleport(inFrontOfSeat(seat, 0.5), seat.yaw + Math.PI);
+        },
+        state: () => ({ ...character.current, phase: character.seat?.phase ?? null }),
+      };
+    }
+  }
 
   /**
    * Call once per frame before stepping the character. Returns the prompt to show; `input` learns
    * whether E should interact.
    */
   update(now: number, intents: Intents, input: InputSystem, link: SeatingLink | undefined) {
+    this.link = link;
     const c = this.character;
     const seat = c.seat;
     const taken = new Set<number>();
@@ -75,6 +93,15 @@ export class LocalSeating {
       }
     } else if (!seat && this.claimed !== null) {
       this.release(link); // left the seat some other way (fell out of the world, teleported)
+    } else if (
+      !seat &&
+      this.pending === null &&
+      link?.selfId &&
+      now - this.checkedAt > RECHECK_MS
+    ) {
+      // A claim you no longer use (an answer that came in after you got up): free the seat.
+      this.checkedAt = now;
+      if (Object.values(link.claims).includes(link.selfId)) link.stand();
     }
 
     let prompt: SeatPrompt = null;
@@ -101,6 +128,7 @@ export class LocalSeating {
     this.pending = seat.id;
     void link.sit(seat.id).then((ok) => {
       this.pending = null;
+      if (this.disposed) return;
       if (ok) {
         this.claimed = seat.id;
         this.character.sitDown(seat);
@@ -111,6 +139,20 @@ export class LocalSeating {
         };
       }
     });
+  }
+
+  /**
+   * The room view is closing (video grid, another room): get up on the spot, so you don't come
+   * back inside the sofa, and free the seat. Returns where you're standing now, if you were seated.
+   */
+  leave(fits: (feet: Vec3) => boolean): { position: Vec3; yaw: number } | null {
+    this.disposed = true;
+    const seat = this.character.seat?.seat;
+    if (!seat) return null;
+    const position = standSpot(seat, fits, this.character.current.position);
+    this.character.teleport(position, seat.yaw);
+    this.release(this.link);
+    return { position, yaw: seat.yaw };
   }
 
   private release(link: SeatingLink | undefined) {
