@@ -1,6 +1,7 @@
 import type { Walkway } from "@vcr/protocol";
 import type { Vec3 } from "../math";
 import type { BoxCollider } from "../locomotion/physics";
+import { CHARACTER } from "../locomotion/CharacterController";
 
 /**
  * Walkways (room setup): floor rectangles the owner keeps walkable through scan clutter. Inside
@@ -64,6 +65,20 @@ export function clipToWalkways(
   return out;
 }
 
+/**
+ * Walkways widened by the character's radius (plus a hair): with those cut out, nothing touches
+ * a capsule whose center is inside the walkway, so you pass through freely however tight the gap
+ * is, your body overlapping the furniture beside it.
+ */
+export function passableWalkways(walkways: readonly Walkway[]): Walkway[] {
+  const r = CHARACTER.radius + 0.02;
+  return walkways.map((w) => ({
+    ...w,
+    min: [w.min[0] - r, w.min[1] - r],
+    max: [w.max[0] + r, w.max[1] + r],
+  }));
+}
+
 /** Whether a world point is inside a walkway's prism (above the cut). */
 export function inWalkway(
   x: number,
@@ -78,8 +93,9 @@ export function inWalkway(
 }
 
 /**
- * For collision meshes that aren't boxes: the triangles whose centroid is outside every walkway
- * prism. `vertices` are world space, xyz interleaved.
+ * For collision meshes that aren't boxes: the triangles that don't reach into any walkway's prism.
+ * A triangle that only touches a corner of it still goes, so nothing in the walkway can catch you.
+ * `vertices` are world space, xyz interleaved.
  */
 export function dropWalkwayTriangles(
   vertices: Float32Array,
@@ -93,11 +109,15 @@ export function dropWalkwayTriangles(
     const a = indices[t]! * 3;
     const b = indices[t + 1]! * 3;
     const c = indices[t + 2]! * 3;
-    const x = (vertices[a]! + vertices[b]! + vertices[c]!) / 3;
-    const y = (vertices[a + 1]! + vertices[b + 1]! + vertices[c + 1]!) / 3;
-    const z = (vertices[a + 2]! + vertices[b + 2]! + vertices[c + 2]!) / 3;
-    if (!inWalkway(x, y, z, walkways, cut))
-      kept.push(indices[t]!, indices[t + 1]!, indices[t + 2]!);
+    const x0 = Math.min(vertices[a]!, vertices[b]!, vertices[c]!);
+    const x1 = Math.max(vertices[a]!, vertices[b]!, vertices[c]!);
+    const y1 = Math.max(vertices[a + 1]!, vertices[b + 1]!, vertices[c + 1]!);
+    const z0 = Math.min(vertices[a + 2]!, vertices[b + 2]!, vertices[c + 2]!);
+    const z1 = Math.max(vertices[a + 2]!, vertices[b + 2]!, vertices[c + 2]!);
+    const reaches =
+      y1 > cut &&
+      walkways.some((w) => x1 > w.min[0] && x0 < w.max[0] && z1 > w.min[1] && z0 < w.max[1]);
+    if (!reaches) kept.push(indices[t]!, indices[t + 1]!, indices[t + 2]!);
   }
   return Uint32Array.from(kept);
 }

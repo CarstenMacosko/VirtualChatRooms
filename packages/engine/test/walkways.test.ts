@@ -115,7 +115,7 @@ describe("walkways in non-box collision meshes", () => {
     expect(inWalkway(1.5, 1, 0.5, w)).toBe(false);
   });
 
-  it("drops triangles whose centroid is in a walkway", () => {
+  it("drops triangles that reach into a walkway", () => {
     // One triangle in the walkway above the floor, one on the floor, one outside.
     const vertices = new Float32Array([
       ...[0.4, 1, 0.4, 0.6, 1, 0.4, 0.5, 1.2, 0.6],
@@ -125,6 +125,12 @@ describe("walkways in non-box collision meshes", () => {
     const indices = Uint32Array.from({ length: 9 }, (_, i) => i);
     expect([...dropWalkwayTriangles(vertices, indices, w)]).toEqual([3, 4, 5, 6, 7, 8]);
     expect(dropWalkwayTriangles(vertices, indices, [])).toBe(indices);
+  });
+
+  it("drops a big triangle that only pokes into a walkway, though its centroid is outside", () => {
+    // A wall triangle spanning x 0.9 → 3: its centroid (≈ 2.2) is well outside the walkway.
+    const vertices = new Float32Array([0.9, 0.2, 0.5, 3, 0.2, 0.5, 3, 2, 0.5]);
+    expect([...dropWalkwayTriangles(vertices, Uint32Array.of(0, 1, 2), w)]).toEqual([]);
   });
 });
 

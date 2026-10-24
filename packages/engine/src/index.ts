@@ -19,4 +19,5 @@ export * from "./net/PoseSender";
 export * from "./room/sampleRoom";
 export * from "./room/scannedRoom";
 export * from "./room/setupEdit";
+export * from "./room/tableClearance";
 export * from "./room/walkways";

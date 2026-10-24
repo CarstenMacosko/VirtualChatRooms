@@ -31,6 +31,14 @@ describe("RemotePoseBuffer", () => {
     expect(s.stale).toBe(false);
   });
 
+  it("follows a sender that started over instead of dropping it as late", () => {
+    const buf = new RemotePoseBuffer({ delayMs: 100 });
+    buf.push(pose(5000, 0, 0), 1000);
+    buf.push(pose(4999, 0, 0), 1001); // a duplicate via the other transport: ignored
+    buf.push(pose(0, 60_000, 7), 70_000); // they switched views: a new sender, seq 0
+    expect(buf.sample(70_000 + 100)!.position[0]).toBe(7);
+  });
+
   it("extrapolates briefly when packets stop, then holds", () => {
     const buf = new RemotePoseBuffer({ delayMs: 100, maxExtrapolateMs: 250 });
     feed(buf, [pose(0, 0, 0), pose(1, 100, 1)]);

@@ -562,7 +562,9 @@ function Simulation(props: {
     // 4. Remote avatars from their interpolation buffers.
     for (const [id, avatar] of remotes.current) {
       const pose = poseHub.sample(id, now);
-      if (!pose || pose.stale) {
+      // Someone whose packets stopped (phone locked, app in the background) stays where they
+      // were: they're still in the call until the roster says they left.
+      if (!pose) {
         avatar.setVisible(false);
         anchors.current.delete(id);
         continue;
