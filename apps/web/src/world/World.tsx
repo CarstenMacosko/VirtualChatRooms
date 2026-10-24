@@ -1,21 +1,10 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  BufferGeometry,
-  Color,
-  Euler,
-  Group,
-  Mesh,
-  PerspectiveCamera,
-  Quaternion,
-  Vector3,
-} from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { Color, Euler, Group, PerspectiveCamera, Quaternion, Vector3 } from "three";
 import {
   autopilotStep,
   CameraRig,
   CharacterController,
-  collisionToWorld,
   type DeviceProfile,
   forwardFromYaw,
   InputSystem,
@@ -33,13 +22,13 @@ import {
   type Vec3,
 } from "@vcr/engine";
 import type { AvatarRecipe, ParticipantView, Quat, SceneAssets } from "@vcr/protocol";
-import { assetUrl } from "../lib/api";
 import { EMOTE_DURATION_MS, EMOTE_GLYPHS } from "../components/emotes";
 import { recipeOf } from "../lib/avatar";
 import type { ActiveEmote } from "../lib/realm";
 import type { TrackedFace } from "../media/FaceTracker";
 import { LOCAL_VOICE, type SpatialAudio } from "../media/SpatialAudio";
 import { AVATAR_LAYER, AvatarInstance } from "./AvatarInstance";
+import { addRoomColliders, loadRoomCollision } from "./collision";
 import { headshotTargets } from "./headshots";
 import { RoomMesh } from "./RoomMesh";
 import { type RoomLoadState, RoomSplats } from "./RoomSplats";
@@ -214,7 +203,8 @@ export default function World(props: WorldProps) {
 
 /**
  * The room's collision geometry: the sample room's boxes, or a scan's collision mesh (a GLB in
- * the scan's file space) moved into the world by the manifest transform.
+ * the scan's file space) moved into the world by the manifest transform, with its walkways
+ * opened up.
  */
 type Colliders = { layout: RoomLayout; add(physics: PhysicsWorld): void };
 
@@ -225,29 +215,9 @@ async function loadColliders(scene: SceneAssets | null): Promise<Colliders> {
       add: (physics) => sampleRoomColliders().forEach((box) => physics.addBox(box)),
     };
   }
-  const { manifest, urls } = scene;
-  const url = urls[manifest.collision.key];
-  if (!url) throw new Error("the room's collision mesh is missing");
-  const gltf = await new GLTFLoader().loadAsync(assetUrl(url));
-  gltf.scene.updateMatrixWorld(true);
-  const meshes: Array<{ vertices: Float32Array; indices: Uint32Array }> = [];
-  gltf.scene.traverse((o) => {
-    const mesh = o as Mesh<BufferGeometry>;
-    if (!mesh.isMesh) return;
-    const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
-    const position = geometry.getAttribute("position");
-    const vertices = collisionToWorld(new Float32Array(position.array), manifest.transform);
-    const index = geometry.getIndex();
-    const indices = index
-      ? Uint32Array.from(index.array)
-      : Uint32Array.from({ length: position.count }, (_, i) => i);
-    meshes.push({ vertices, indices });
-  });
-  if (!meshes.length) throw new Error("the room's collision mesh is empty");
-  return {
-    layout: scannedRoomLayout(manifest),
-    add: (physics) => meshes.forEach((m) => physics.addTrimesh(m.vertices, m.indices)),
-  };
+  const collision = await loadRoomCollision(scene);
+  const layout = scannedRoomLayout(scene.manifest);
+  return { layout, add: (physics) => addRoomColliders(physics, collision, layout.walkways) };
 }
 
 const pitchQuat = (pitch: number): Quat => [Math.sin(pitch / 2), 0, 0, Math.cos(pitch / 2)];

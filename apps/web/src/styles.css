@@ -638,3 +638,178 @@ details summary {
   cursor: pointer;
   color: var(--accent);
 }
+
+/* Room setup editor: full screen over the portal, dark like the room view. */
+.setup-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: var(--bg);
+  color: var(--text);
+}
+.setup-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  padding-top: max(10px, env(safe-area-inset-top));
+  background: var(--panel);
+  border-bottom: 1px solid #28426e;
+}
+.setup-title {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.setup-title b {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.setup-title .muted {
+  font-size: 12px;
+}
+.setup-top button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+}
+/* Icon over label, so all five fit beside the panel or on a phone. */
+.setup-tools button {
+  display: inline-flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.setup-top button.icon-only {
+  padding: 8px;
+}
+.setup-body {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  min-height: 0;
+}
+.setup-stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+.setup-tools {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  max-width: calc(100% - 16px);
+  overflow-x: auto;
+  padding: 6px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+}
+.setup-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 14px;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  background: var(--panel);
+  border-left: 1px solid #28426e;
+}
+.setup-panel p {
+  margin: 0;
+}
+.setup-hint {
+  font-size: 13px;
+}
+.setup-notice {
+  color: var(--ok);
+}
+.setup-inspector {
+  display: grid;
+  gap: 10px;
+}
+.setup-inspector h3 {
+  margin: 0;
+  font-size: 17px;
+}
+.setup-inspector > button {
+  justify-self: start;
+}
+.setup-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.setup-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.setup-number input {
+  width: 100%;
+}
+.setup-turn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.setup-turn span {
+  flex: 1;
+}
+label.setup-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.setup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.setup-list button.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  color: var(--text);
+  text-align: left;
+}
+.setup-offer {
+  display: grid;
+  gap: 8px;
+}
+@media (max-width: 760px) {
+  .setup-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+  }
+  .setup-panel {
+    max-height: 42vh;
+    border-left: 0;
+    border-top: 1px solid #28426e;
+  }
+  .setup-top .setup-label {
+    display: none;
+  }
+  .setup-tools {
+    top: 10px;
+    bottom: auto;
+  }
+  .setup-tools button {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+}
