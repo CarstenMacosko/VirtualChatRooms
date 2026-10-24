@@ -20,6 +20,23 @@ export interface CameraPose {
   lookAt: Vec3;
 }
 
+/**
+ * Where the camera hangs off the character, when it isn't standing: sitting lowers the eyes and
+ * the orbit pivot (heights above the feet point) and pulls the orbit in a little.
+ */
+export interface CameraBody {
+  eyeHeight: number;
+  pivotHeight: number;
+  /** Multiplies the orbit distance. */
+  distanceScale: number;
+}
+
+export const STANDING_BODY: CameraBody = {
+  eyeHeight: CAMERA.eyeHeight,
+  pivotHeight: CAMERA.pivotHeight,
+  distanceScale: 1,
+};
+
 /** Distance to the first obstacle along a ray, or null if clear. */
 export type RayCaster = (origin: Vec3, dir: Vec3, maxDistance: number) => number | null;
 
@@ -50,28 +67,25 @@ export class CameraRig {
     );
   }
 
-  compute(feet: Vec3, castRay: RayCaster, dt: number): CameraPose {
+  compute(feet: Vec3, castRay: RayCaster, dt: number, body = STANDING_BODY): CameraPose {
     const fwd = forwardFromYaw(this.yaw);
     const cosP = Math.cos(this.pitch);
     const sinP = Math.sin(this.pitch);
 
     if (this.mode === "first") {
-      const eye: Vec3 = [
-        feet[0] + fwd.x * 0.08,
-        feet[1] + CAMERA.eyeHeight,
-        feet[2] + fwd.z * 0.08,
-      ];
+      const eye: Vec3 = [feet[0] + fwd.x * 0.08, feet[1] + body.eyeHeight, feet[2] + fwd.z * 0.08];
       return {
         position: eye,
         lookAt: [eye[0] + fwd.x * cosP, eye[1] - sinP, eye[2] + fwd.z * cosP],
       };
     }
 
-    const pivot: Vec3 = [feet[0], feet[1] + CAMERA.pivotHeight, feet[2]];
+    const pivot: Vec3 = [feet[0], feet[1] + body.pivotHeight, feet[2]];
     // Camera sits behind the look direction and above it by `pitch`.
     const dir: Vec3 = [-fwd.x * cosP, sinP, -fwd.z * cosP];
-    const hit = castRay(pivot, dir, this.targetDistance + CAMERA.wallPadding);
-    const allowed = hit === null ? this.targetDistance : Math.max(0.3, hit - CAMERA.wallPadding);
+    const wanted = this.targetDistance * body.distanceScale;
+    const hit = castRay(pivot, dir, wanted + CAMERA.wallPadding);
+    const allowed = hit === null ? wanted : Math.max(0.3, hit - CAMERA.wallPadding);
     // Pull in instantly when something is in the way; ease back out when it clears.
     this.distance = allowed < this.distance ? allowed : damp(this.distance, allowed, 4, dt);
 

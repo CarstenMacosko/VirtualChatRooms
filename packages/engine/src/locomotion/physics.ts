@@ -59,6 +59,36 @@ export class PhysicsWorld {
     return hit ? hit.timeOfImpact : null;
   }
 
+  /**
+   * Whether an upright capsule (`radius`, total `height`) standing at `feet` is clear of the room
+   * and has floor under it (within `drop`).
+   */
+  capsuleFits(
+    feet: Vec3,
+    radius: number,
+    height: number,
+    exclude?: RAPIER.Collider,
+    drop = 0.35,
+  ): boolean {
+    if (this.queriesStale) this.step();
+    // A hair above the floor, so touching it isn't overlapping it.
+    const center = { x: feet[0], y: feet[1] + height / 2 + 0.03, z: feet[2] };
+    const shape = new RAPIER.Capsule(height / 2 - radius, radius);
+    const rotation = { x: 0, y: 0, z: 0, w: 1 };
+    const blocked = this.world.intersectionWithShape(
+      center,
+      rotation,
+      shape,
+      undefined,
+      undefined,
+      exclude,
+    );
+    if (blocked) return false;
+    return (
+      this.castRay([feet[0], feet[1] + 0.3, feet[2]], [0, -1, 0], 0.3 + drop, exclude) !== null
+    );
+  }
+
   step() {
     this.world.step();
     this.queriesStale = false;

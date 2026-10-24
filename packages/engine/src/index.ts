@@ -9,6 +9,7 @@ export * from "./input/intents";
 export * from "./locomotion/CharacterController";
 export * from "./locomotion/autopilot";
 export * from "./locomotion/physics";
+export * from "./locomotion/sitting";
 export * from "./math";
 export * from "./media/interest";
 export * from "./net/PoseBuffer";
