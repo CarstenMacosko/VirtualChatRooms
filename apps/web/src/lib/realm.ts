@@ -137,6 +137,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
       games.connect((type, message) => room.send(type, message));
       // Table games patch state often (every piece moved); only re-render people when they change.
       let peopleJson = "";
+      let seatsJson = "";
       room.onStateChange((state) => {
         const json = (state as { toJSON(): SyncedState }).toJSON();
         const people = JSON.stringify(json.participants ?? {});
@@ -145,7 +146,11 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
           setParticipants(Object.entries(json.participants ?? {}).map(([id, p]) => ({ id, ...p })));
         }
         setLocked(json.locked);
-        setSeats(json.seats ?? {});
+        const seatClaims = JSON.stringify(json.seats ?? {});
+        if (seatClaims !== seatsJson) {
+          seatsJson = seatClaims;
+          setSeats(json.seats ?? {});
+        }
         games.ingest(json.games);
       });
       room.onMessage(RealmMessage.gameDrag, (message: GameDragBroadcast) => {
