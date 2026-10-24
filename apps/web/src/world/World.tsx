@@ -18,6 +18,7 @@ import {
   SAMPLE_ROOM_LAYOUT,
   sampleRoomColliders,
   scannedRoomLayout,
+  seatedCameraBody,
   spawnPointFor,
   type Vec3,
 } from "@vcr/engine";
@@ -32,6 +33,15 @@ import { addRoomColliders, loadRoomCollision } from "./collision";
 import { headshotTargets } from "./headshots";
 import { RoomMesh } from "./RoomMesh";
 import { type RoomLoadState, RoomSplats } from "./RoomSplats";
+import {
+  LocalSeating,
+  promptKey,
+  remotePlacement,
+  remoteSeat,
+  type SeatingLink,
+  type SeatPrompt,
+  SeatPromptView,
+} from "./sitting";
 import { TouchControls } from "./TouchControls";
 
 export interface Autopilot {
@@ -43,6 +53,8 @@ type Anchors = Map<string, Vec3>;
 type LabelMap = Map<string, HTMLDivElement>;
 
 const LABEL_HEIGHT = 2.0;
+/** How much lower a seated person's label sits. */
+const SEATED_LABEL_DROP = 0.45;
 const MAX_STEPS_PER_FRAME = 5;
 
 export interface WorldProps {
@@ -61,6 +73,8 @@ export interface WorldProps {
   /** A scanned room's manifest and signed URLs; null for the built-in sample room. */
   scene: SceneAssets | null;
   debug: boolean;
+  /** Seat claims through the realm (ADR 0020); without it you can still sit, unshared. */
+  seating?: SeatingLink;
 }
 
 /** The shared 3D room: splats, physics, your avatar, everyone else, cameras and name labels. */
@@ -73,6 +87,7 @@ export default function World(props: WorldProps) {
   const anchors = useRef<Anchors>(new Map());
   const labels = useRef<LabelMap>(new Map());
   const stats = useRef<HTMLPreElement>(null);
+  const [seatPrompt, setSeatPrompt] = useState<SeatPrompt>(null);
 
   const self = props.participants.find((p) => p.id === props.selfId);
   const selfUserId = self?.userId;
@@ -151,6 +166,8 @@ export default function World(props: WorldProps) {
             labels={labels}
             stats={props.debug ? stats : null}
             splatCount={splatCount}
+            seating={props.seating}
+            onSeatPrompt={setSeatPrompt}
           />
         </Canvas>
       ) : (
@@ -188,12 +205,13 @@ export default function World(props: WorldProps) {
         })}
       </div>
 
+      {sim && <SeatPromptView prompt={seatPrompt} touch={props.profile.touch} input={input} />}
       {props.profile.touch ? (
         <TouchControls input={input} />
       ) : (
         <p className="controls-hint">
-          WASD to move · Shift to run · Space to jump · drag to look · scroll to zoom · V for first
-          person
+          WASD to move · Shift to run · Space to jump · E to sit · drag to look · scroll to zoom · V
+          for first person
         </p>
       )}
       {props.debug && <pre className="debug-stats" ref={stats} />}
@@ -243,6 +261,7 @@ interface Sim {
   rig: CameraRig;
   sender: PoseSender;
   local: AvatarInstance;
+  seating: LocalSeating;
 }
 
 /** Mutable per-frame bookkeeping for the simulation loop. */
@@ -252,6 +271,8 @@ interface LoopState {
   pendingJump: boolean;
   frames: number;
   statsAt: number;
+  /** The seat prompt last shown, so React only hears about changes. */
+  promptKey: string;
 }
 
 function createSim(
@@ -263,14 +284,16 @@ function createSim(
 ): Sim {
   colliders.add(physics);
   const spawn = spawnPointFor(userId, colliders.layout);
+  const character = new CharacterController(physics, spawn);
   return {
     physics,
     layout: colliders.layout,
     spawn,
-    character: new CharacterController(physics, spawn),
+    character,
     rig: new CameraRig(spawn.yaw),
     sender: new PoseSender((bytes) => poseHub.send(bytes)),
     local: new AvatarInstance(recipe),
+    seating: new LocalSeating(character, colliders.layout),
   };
 }
 
@@ -295,6 +318,8 @@ function Simulation(props: {
   labels: RefObject<LabelMap>;
   stats: RefObject<HTMLPreElement | null> | null;
   splatCount: number;
+  seating: SeatingLink | undefined;
+  onSeatPrompt(prompt: SeatPrompt): void;
 }) {
   const { sim, input, poseHub, audio, autopilotRef, trackedFaceRef, selfId, anchors, labels } =
     props;
@@ -355,6 +380,7 @@ function Simulation(props: {
     pendingJump: false,
     frames: 0,
     statsAt: 0,
+    promptKey: "",
   });
 
   useFrame((state, rawDt) => {
@@ -375,6 +401,13 @@ function Simulation(props: {
       z: fwd.z * intents.move.y + right.z * intents.move.x,
     };
     let run = intents.run;
+
+    // Sitting: offer the seat in front of you, claim it, or get up (ADR 0020).
+    const prompt = sim.seating.update(now, intents, input, props.seating);
+    if (promptKey(prompt) !== l.promptKey) {
+      l.promptKey = promptKey(prompt);
+      props.onSeatPrompt(prompt);
+    }
 
     // "Walk over to them" (double-clicked a tile), until you steer yourself or arrive.
     const targetId = autopilotRef.current.targetId;
@@ -436,6 +469,7 @@ function Simulation(props: {
       loco: c.loco,
       speed: c.speed,
       lookPitch: firstPerson ? rig.pitch : 0,
+      ...(character.seat && { seatHeight: character.seat.seat.height }),
       ...(tracked && { headLook: headLookFromQuat(tracked.head) }),
     });
     // Others see your tracked head turn, or (in first person) where you're looking.
@@ -444,6 +478,7 @@ function Simulation(props: {
       position: c.position,
       yaw: c.yaw,
       loco: c.loco,
+      ...(c.seatId !== undefined && { seatId: c.seatId }),
       ...(head && { head }),
       ...(tracked && { face: tracked.blendshapes }),
     });
@@ -451,6 +486,7 @@ function Simulation(props: {
       feet,
       (origin, dir, max) => physics.castRay(origin, dir, max, character.collider),
       dt,
+      seatedCameraBody(character.seat?.seat.height ?? 0, c.sitAmount),
     );
     state.camera.position.set(...cam.position);
     state.camera.lookAt(...cam.lookAt);
@@ -460,7 +496,10 @@ function Simulation(props: {
     }
     if (selfId) {
       if (firstPerson) anchors.current.delete(selfId);
-      else anchors.current.set(selfId, [feet[0], feet[1] + LABEL_HEIGHT, feet[2]]);
+      else {
+        const height = LABEL_HEIGHT - SEATED_LABEL_DROP * c.sitAmount;
+        anchors.current.set(selfId, [feet[0], feet[1] + height, feet[2]]);
+      }
     }
 
     // 4. Remote avatars from their interpolation buffers.
@@ -472,20 +511,21 @@ function Simulation(props: {
         continue;
       }
       avatar.setVisible(true);
-      audio?.setPosition(id, pose.position);
+      // Seated people sit on the seat from our own copy of the layout.
+      const seat = remoteSeat(pose, sim.layout);
+      const { position, yaw } = remotePlacement(pose, seat);
+      audio?.setPosition(id, position);
       avatar.setFace({ tracked: pose.face ?? null, voice: audio?.levelOf(id) ?? 0 });
       avatar.update(dt, {
-        position: pose.position,
-        yaw: pose.yaw,
+        position,
+        yaw,
         loco: pose.loco,
         speed: pose.speed,
+        ...(seat && { seatHeight: seat.height }),
         ...(pose.head && { headLook: headLookFromQuat(pose.head) }),
       });
-      anchors.current.set(id, [
-        pose.position[0],
-        pose.position[1] + LABEL_HEIGHT,
-        pose.position[2],
-      ]);
+      const label = LABEL_HEIGHT - (seat ? SEATED_LABEL_DROP : 0);
+      anchors.current.set(id, [position[0], position[1] + label, position[2]]);
     }
 
     // 5. Name labels follow anchors in screen space.

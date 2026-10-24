@@ -261,6 +261,46 @@ input {
   touch-action: none;
 }
 
+/* Sitting (ADR 0020): "E Sit" near the bottom of the room view, a big "Sit" button on touch. */
+.seat-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgb(10 22 40 / 0.72);
+  color: var(--text);
+  font-size: 14px;
+  touch-action: none;
+}
+.seat-prompt kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+}
+.seat-prompt.touch {
+  left: auto;
+  right: 20px;
+  bottom: 160px;
+  transform: none;
+  padding: 14px 22px;
+  font-size: 18px;
+  background: rgb(255 255 255 / 0.2);
+}
+.seat-prompt.refused {
+  pointer-events: none;
+  color: var(--bad);
+}
+
 /* Shared bits */
 .row {
   display: flex;
