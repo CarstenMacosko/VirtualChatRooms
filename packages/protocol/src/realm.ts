@@ -72,6 +72,13 @@ export const RealmMessage = {
    * everyone: rejoin to get the new room's assets.
    */
   roomChanged: "roomChanged",
+  /**
+   * Sitting (ADR 0020). Client → server: claim a seat of the room's layout; server → that client:
+   * SitResult. Claims are in `SessionState.seats`.
+   */
+  sit: "sit",
+  /** Client → server: get up (releases your seat). */
+  stand: "stand",
 } as const;
 
 export const MAX_CHAT_LENGTH = 500;
@@ -96,6 +103,9 @@ export const ClientMessages = {
   [RealmMessage.chat]: z.object({ text: z.string().trim().min(1).max(MAX_CHAT_LENGTH) }),
   [RealmMessage.raiseHand]: z.object({ raised: z.boolean() }),
   [RealmMessage.roomChanged]: z.object({}),
+  // The realm doesn't know the room's seats, only that ids fit the manifest's range.
+  [RealmMessage.sit]: z.object({ seatId: z.number().int().min(0).max(0xffff) }),
+  [RealmMessage.stand]: z.object({}),
 } as const;
 
 export const NoticeKind = z.enum([
@@ -122,6 +132,9 @@ export const ServerMessages = {
   }),
 } as const;
 export type ChatBroadcast = z.infer<(typeof ServerMessages)["chat"]>;
+/** The realm's answer to `sit`: `ok` false when someone else is sitting there. */
+export const SitResult = z.object({ seatId: z.number().int(), ok: z.boolean() });
+export type SitResult = z.infer<typeof SitResult>;
 export const RoomChangedBroadcast = z.object({ by: z.string() });
 export type RoomChangedBroadcast = z.infer<typeof RoomChangedBroadcast>;
 export type EmoteBroadcast = z.infer<(typeof ServerMessages)["emote"]>;

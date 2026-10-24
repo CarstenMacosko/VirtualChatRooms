@@ -15,7 +15,7 @@ export const Participant = schema(
     /** AvatarRecipe JSON; "" until they make one. */
     avatar: t.string().default(""),
     handRaised: t.boolean().default(false),
-    // Added in later phases: groupId (side conversations), seatId (sitting).
+    // Added in later phases: groupId (side conversations).
   },
   "Participant",
 );
@@ -25,7 +25,9 @@ export const SessionState = schema(
   {
     participants: t.map(Participant),
     locked: t.boolean().default(false),
-    // Added in later phases: groups, seats, games.
+    /** Seat claims: seat id (as a string) → the sitter's realm session id (seats.ts). */
+    seats: t.map("string"),
+    // Added in later phases: groups, games.
   },
   "SessionState",
 );

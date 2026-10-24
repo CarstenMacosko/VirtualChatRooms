@@ -24,10 +24,12 @@ import {
   RealmJoinOptions,
   RealmMessage,
   type RealmTicketClaims,
+  type SitResult,
 } from "@vcr/protocol";
 import { issueInternalToken, verifyRealmTicket } from "./auth";
 import { env } from "./env";
 import { MediaControl } from "./media";
+import { claimSeat, releaseSeats } from "./seats";
 import { Participant, SessionState } from "./state";
 
 /** MVP target: 25 people per session (PLAN.md § 10). */
@@ -89,6 +91,21 @@ export class SessionRoom extends Room<{ state: SessionState }> {
       if (!p || !isHost(p.role)) return;
       const broadcast: RoomChangedBroadcast = { by: client.sessionId };
       this.broadcast(RealmMessage.roomChanged, broadcast);
+      // Seat ids belong to the old room's layout.
+      this.state.seats.clear();
+    }),
+
+    [RealmMessage.sit]: validate(ClientMessages.sit, (client, { seatId }) => {
+      if (!this.state.participants.has(client.sessionId)) return;
+      const result: SitResult = {
+        seatId,
+        ok: claimSeat(this.state.seats, seatId, client.sessionId),
+      };
+      client.send(RealmMessage.sit, result);
+    }),
+
+    [RealmMessage.stand]: validate(ClientMessages.stand, (client) => {
+      releaseSeats(this.state.seats, client.sessionId);
     }),
 
     [RealmMessage.raiseHand]: validate(ClientMessages.raiseHand, (client, { raised }) => {
@@ -245,6 +262,7 @@ export class SessionRoom extends Room<{ state: SessionState }> {
 
   override onLeave(client: Client) {
     this.state.participants.delete(client.sessionId);
+    releaseSeats(this.state.seats, client.sessionId);
     if (this.ended || this.hostAbsence) return;
     const hostPresent = [...this.state.participants.values()].some((p) => isHost(p.role));
     if (!hostPresent) {
