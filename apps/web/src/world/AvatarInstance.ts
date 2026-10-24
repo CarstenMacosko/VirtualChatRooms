@@ -171,7 +171,8 @@ export class AvatarInstance {
     const vrm = this.vrm;
     if (!vrm) return;
 
-    const pose = this.animator.update(dt, frame);
+    // The seated pose needs the hips' rest height to lower them onto the seat.
+    const pose = this.animator.update(dt, { hipsHeight: this.restHipsY || undefined, ...frame });
     for (const name of ANIMATED_BONES) {
       vrm.humanoid.getNormalizedBoneNode(name)?.rotation.set(...pose.bones[name]);
     }

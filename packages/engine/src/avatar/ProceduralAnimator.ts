@@ -38,15 +38,29 @@ export interface AnimatorInput {
   lookPitch?: number;
   /** Extra head rotation (face tracking, or turning toward whoever's talking), radians. */
   headLook?: { pitch: number; yaw: number; roll: number };
+  /**
+   * Sitting (loco sitDown or seated): the seat surface's height above the feet point, which is
+   * the floor under the hips. Defaults to a chair's.
+   */
+  seatHeight?: number;
+  /** Standing hips height above the feet (the avatar's rest pose), meters. */
+  hipsHeight?: number;
 }
 
 const ARM_DOWN = 1.25;
 /** Meters travelled per full gait cycle (two steps). */
 const STRIDE = 1.4;
+const DEFAULT_SEAT_HEIGHT = 0.45;
+const DEFAULT_HIPS_HEIGHT = 0.92;
+/** Seats lower than this (cushions on the floor) get crossed legs. */
+const FLOOR_SEAT = 0.25;
+
+const isSeated = (loco: LocoState) => loco === LocoState.sitDown || loco === LocoState.seated;
+const isSitting = (loco: LocoState) => isSeated(loco) || loco === LocoState.standUp;
 
 /**
  * Placeholder animation computed from locomotion state and speed: idle breathing, a walk/run
- * cycle and an airborne pose, blended smoothly. Phase 3 replaces it with a clip library; the
+ * cycle, an airborne pose and sitting (lowering onto a seat and getting up), blended smoothly. Phase 3 replaces it with a clip library; the
  * avatar code only depends on `RigPose`, so that swap stays local.
  *
  * Conventions (avatar faces +Z, VRM normalized bones): a positive X rotation swings a leg or arm
@@ -58,6 +72,7 @@ export class ProceduralAnimator {
   private moveWeight = 0;
   private runWeight = 0;
   private airWeight = 0;
+  private sitWeight = 0;
   private emote: { id: EmoteId; startedAt: number } | null = null;
 
   /** Plays an emote over whatever the avatar is doing; a new one replaces the last. */
@@ -106,7 +121,10 @@ export class ProceduralAnimator {
   private locomotion(dt: number, input: AnimatorInput): RigPose {
     this.time += dt;
     const airborne = input.loco === LocoState.jump || input.loco === LocoState.fall;
-    const speed = airborne ? 0 : input.speed;
+    // Gliding onto or off a seat isn't walking.
+    const speed = airborne || isSitting(input.loco) ? 0 : input.speed;
+    // About half a second either way, like the controller's sit and stand moves.
+    this.sitWeight = damp(this.sitWeight, isSeated(input.loco) ? 1 : 0, 9, dt);
     this.moveWeight = damp(this.moveWeight, speed > 0.15 ? 1 : 0, 8, dt);
     this.runWeight = damp(this.runWeight, clamp((speed - 2) / 2, 0, 1), 6, dt);
     this.airWeight = damp(this.airWeight, airborne ? 1 : 0, 10, dt);
@@ -142,7 +160,9 @@ export class ProceduralAnimator {
         rightFoot: [-0.2 * Math.max(0, -c) * mw, 0, 0],
       },
     };
-    if (this.airWeight < 0.001) return ground;
+    const sitting =
+      this.sitWeight > 0.001 ? blend(ground, this.seated(input, breathe), this.sitWeight) : ground;
+    if (this.airWeight < 0.001) return sitting;
 
     const air: RigPose = {
       hipsOffsetY: 0,
@@ -159,7 +179,41 @@ export class ProceduralAnimator {
         rightLowerLeg: [0.6, 0, 0],
       },
     };
-    return blend(ground, air, this.airWeight);
+    return blend(sitting, air, this.airWeight);
+  }
+
+  /**
+   * Sitting: hips on the seat, thighs forward, knees bent ~90° with the feet on the floor, leaning
+   * back a little, hands in the lap. On a floor cushion the legs cross instead.
+   */
+  private seated(input: AnimatorInput, breathe: number): RigPose {
+    const seat = input.seatHeight ?? DEFAULT_SEAT_HEIGHT;
+    const hips = input.hipsHeight ?? DEFAULT_HIPS_HEIGHT;
+    const floor = seat < FLOOR_SEAT;
+    // The hip joints sit a little above the seat surface.
+    const hipsOffsetY = seat + 0.08 - hips;
+    const lean = floor ? 0.05 : -0.1;
+    return {
+      hipsOffsetY,
+      bones: {
+        hips: [0, 0, 0],
+        spine: [lean, 0, 0],
+        chest: [breathe, 0, 0],
+        neck: [0, 0, 0],
+        head: [(input.lookPitch ?? 0) * 0.6 - lean, 0, 0],
+        leftUpperArm: [-0.55, 0, -1.15],
+        rightUpperArm: [-0.55, 0, 1.15],
+        leftLowerArm: [0, -0.7, 0],
+        rightLowerArm: [0, 0.7, 0],
+        // Euler XYZ turns about Z first: spread the knees out, then swing the thighs forward.
+        leftUpperLeg: floor ? [-1.35, 0, 0.75] : [-1.5, 0, 0.06],
+        rightUpperLeg: floor ? [-1.35, 0, -0.75] : [-1.5, 0, -0.06],
+        leftLowerLeg: floor ? [2.3, 0, 0] : [1.5, 0, 0],
+        rightLowerLeg: floor ? [2.3, 0, 0] : [1.5, 0, 0],
+        leftFoot: [0, 0, 0],
+        rightFoot: [0, 0, 0],
+      },
+    };
   }
 }
 

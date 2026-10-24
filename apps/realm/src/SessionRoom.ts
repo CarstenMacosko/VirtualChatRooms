@@ -24,16 +24,22 @@ import {
   RealmJoinOptions,
   RealmMessage,
   type RealmTicketClaims,
+  type SitResult,
 } from "@vcr/protocol";
 import { issueInternalToken, verifyRealmTicket } from "./auth";
 import { env } from "./env";
+import { GAME_TICK_MS, TableGamesHost } from "./games";
 import { MediaControl } from "./media";
+import { claimSeat, releaseSeats } from "./seats";
 import { Participant, SessionState } from "./state";
 
 /** MVP target: 25 people per session (PLAN.md § 10). */
 export const MAX_PARTICIPANTS = 25;
 
-/** Poses arrive at up to 15 Hz plus occasional emotes; clients far above this get disconnected. */
+/**
+ * Poses and table-game drags each arrive at up to 15 Hz, plus occasional emotes and moves;
+ * clients far above this get disconnected.
+ */
 const MAX_MESSAGES_PER_SECOND = 40;
 
 const media = new MediaControl(env.LIVEKIT_URL, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET);
@@ -65,6 +71,8 @@ export class SessionRoom extends Room<{ state: SessionState }> {
   private hostUserId: string | null = null;
   private hostAbsence: Delayed | null = null;
   private ended = false;
+  /** Jigsaws and other table games; they last as long as the session. */
+  private games = new TableGamesHost(this.state);
 
   override messages = {
     [RealmMessage.emote]: validate(ClientMessages.emote, (client, message) => {
@@ -89,6 +97,21 @@ export class SessionRoom extends Room<{ state: SessionState }> {
       if (!p || !isHost(p.role)) return;
       const broadcast: RoomChangedBroadcast = { by: client.sessionId };
       this.broadcast(RealmMessage.roomChanged, broadcast);
+      // Seat ids belong to the old room's layout.
+      this.state.seats.clear();
+    }),
+
+    [RealmMessage.sit]: validate(ClientMessages.sit, (client, { seatId }) => {
+      if (!this.state.participants.has(client.sessionId)) return;
+      const result: SitResult = {
+        seatId,
+        ok: claimSeat(this.state.seats, seatId, client.sessionId),
+      };
+      client.send(RealmMessage.sit, result);
+    }),
+
+    [RealmMessage.stand]: validate(ClientMessages.stand, (client) => {
+      releaseSeats(this.state.seats, client.sessionId);
     }),
 
     [RealmMessage.raiseHand]: validate(ClientMessages.raiseHand, (client, { raised }) => {
@@ -179,6 +202,24 @@ export class SessionRoom extends Room<{ state: SessionState }> {
     [RealmMessage.endSession]: validate(ClientMessages.endSession, (client) => {
       if (this.state.participants.get(client.sessionId)?.role === "owner") void this.endSession();
     }),
+
+    // Table games (ADR 0021): anyone in the session can play, start or clear a table.
+    [RealmMessage.gameStart]: validate(ClientMessages.gameStart, (_client, message) => {
+      this.games.start(message);
+    }),
+
+    [RealmMessage.gameAction]: validate(ClientMessages.gameAction, (client, message) => {
+      this.games.act(client.sessionId, message, Date.now());
+    }),
+
+    [RealmMessage.gameEnd]: validate(ClientMessages.gameEnd, (_client, message) => {
+      this.games.end(message);
+    }),
+
+    [RealmMessage.gameDrag]: validate(ClientMessages.gameDrag, (client, message) => {
+      const relay = this.games.drag(client.sessionId, message, Date.now());
+      if (relay) this.broadcast(RealmMessage.gameDrag, relay, { except: client });
+    }),
   };
 
   override onCreate(options: unknown) {
@@ -187,6 +228,7 @@ export class SessionRoom extends Room<{ state: SessionState }> {
     );
     // If the owner never shows up, don't keep the room open forever.
     this.hostAbsence = this.clock.setTimeout(() => void this.endSession(), HOST_ARRIVAL_MS);
+    this.clock.setInterval(() => this.games.tick(Date.now()), GAME_TICK_MS);
 
     // Fallback pose relay, used while a client has no LiveKit data channel (ADR 0006): validate,
     // stamp with the sender, forward to everyone else.
@@ -252,6 +294,8 @@ export class SessionRoom extends Room<{ state: SessionState }> {
 
   override onLeave(client: Client) {
     this.state.participants.delete(client.sessionId);
+    releaseSeats(this.state.seats, client.sessionId);
+    this.games.leave(client.sessionId);
     for (const p of this.state.participants.values()) {
       if (p.listeningTo === client.sessionId) p.listeningTo = "";
     }

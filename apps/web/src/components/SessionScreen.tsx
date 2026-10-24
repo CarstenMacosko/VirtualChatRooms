@@ -23,7 +23,7 @@ import {
   VideoOff,
   Volume2,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   PoseSender,
   SAMPLE_ROOM_LAYOUT,
@@ -138,6 +138,10 @@ const canShareScreen = () =>
 function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: SpatialAudio }) {
   const { audio } = props;
   const realm = useRealmSession(props.join, props.sessionId);
+  const seating = useMemo(
+    () => ({ claims: realm.seats, selfId: realm.selfId, sit: realm.sit, stand: realm.stand }),
+    [realm.seats, realm.selfId, realm.sit, realm.stand],
+  );
   const media = useMedia(realm, audio, props.choice);
   const [profile] = useState(readDeviceProfile);
   const [view, setView] = useState<"grid" | "room">(() => {
@@ -336,6 +340,8 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
                   trackedFaceRef={face.faceRef}
                   profile={profile}
                   debug={debug}
+                  seating={seating}
+                  games={realm.games}
                 />
               </Suspense>
             )}

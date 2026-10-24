@@ -5,6 +5,8 @@ import {
   type ChatBroadcast,
   type EmoteBroadcast,
   type EmoteId,
+  type GameDragBroadcast,
+  type GameTableView,
   type JoinSessionResponse,
   type MediaGrant,
   type Notice,
@@ -14,8 +16,10 @@ import {
   RealmJoinError,
   type RealmJoinOptions,
   RealmMessage,
+  type SitResult,
 } from "@vcr/protocol";
 import { ApiRequestError } from "./api";
+import { TableGamesSync } from "./tableGames";
 
 /** The realm server: same origin as the page (proxied at /realm) unless configured otherwise. */
 const REALM_URL = import.meta.env.VITE_REALM_URL || `${window.location.origin}/realm`;
@@ -31,10 +35,15 @@ export type RealmStatus =
   | "error";
 
 const MAX_RETRY_DELAY_MS = 10_000;
+/** How long to wait for the realm to answer a seat claim. */
+const SIT_TIMEOUT_MS = 3000;
 
 interface SyncedState {
   participants: Record<string, Omit<ParticipantView, "id">>;
   locked: boolean;
+  /** Seat id → realm session id of whoever sits there. */
+  seats?: Record<string, string>;
+  games?: Record<string, GameTableView>;
 }
 
 export interface ActiveEmote {
@@ -78,6 +87,9 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
   const [error, setError] = useState<string | null>(null);
   const [participants, setParticipants] = useState<ParticipantView[]>([]);
   const [locked, setLocked] = useState(false);
+  const [seats, setSeats] = useState<Record<string, string>>({});
+  /** Seat claims waiting for the realm's answer, by seat id. */
+  const sitting = useRef(new Map<number, (ok: boolean | null) => void>());
   const [selfId, setSelfId] = useState<string | null>(null);
   const [joinInfo, setJoinInfo] = useState<JoinSessionResponse | null>(null);
   const [mediaGrant, setMediaGrant] = useState<MediaGrant | null>(null);
@@ -86,6 +98,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
   const [chat, setChat] = useState<ChatBroadcast[]>([]);
   const roomRef = useRef<Room | null>(null);
   const [poseHub] = useState(() => new PoseHub());
+  const [games] = useState(() => new TableGamesSync());
   // Bumping `attempt` re-runs the effect, which rejoins after a drop or failed join.
   const [attempt, setAttempt] = useState(0);
   const failures = useRef(0);
@@ -121,10 +134,27 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
       setSelfId(room.sessionId);
       setStatus("connected");
       setError(null);
+      games.connect((type, message) => room.send(type, message));
+      // Table games patch state often (every piece moved); only re-render people when they change.
+      let peopleJson = "";
+      let seatsJson = "";
       room.onStateChange((state) => {
         const json = (state as { toJSON(): SyncedState }).toJSON();
-        setParticipants(Object.entries(json.participants ?? {}).map(([id, p]) => ({ id, ...p })));
+        const people = JSON.stringify(json.participants ?? {});
+        if (people !== peopleJson) {
+          peopleJson = people;
+          setParticipants(Object.entries(json.participants ?? {}).map(([id, p]) => ({ id, ...p })));
+        }
         setLocked(json.locked);
+        const seatClaims = JSON.stringify(json.seats ?? {});
+        if (seatClaims !== seatsJson) {
+          seatsJson = seatClaims;
+          setSeats(json.seats ?? {});
+        }
+        games.ingest(json.games);
+      });
+      room.onMessage(RealmMessage.gameDrag, (message: GameDragBroadcast) => {
+        games.ingestDrag(message);
       });
       room.onMessage(RealmMessage.pose, (bytes: Uint8Array) => {
         poseHub.ingest(bytes, performance.now());
@@ -140,6 +170,10 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
           () => {},
         );
       });
+      room.onMessage(RealmMessage.sit, (result: SitResult) => {
+        sitting.current.get(result.seatId)?.(result.ok);
+        sitting.current.delete(result.seatId);
+      });
       room.onMessage(RealmMessage.chat, (message: ChatBroadcast) => {
         setChat((prev) => [...prev.slice(-199), message]);
       });
@@ -150,7 +184,9 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
         if (cancelled) return; // we left on purpose
         roomRef.current = null;
         poseHub.clear();
+        games.disconnect();
         setParticipants([]);
+        setSeats({});
         setMediaGrant(null);
         if (code === RealmCloseCode.removed) setStatus("removed");
         else if (code === RealmCloseCode.sessionEnded) setStatus("ended");
@@ -173,7 +209,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
       roomRef.current = null;
     };
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `attempt` triggers the rejoin
-  }, [sessionId, attempt, poseHub]);
+  }, [sessionId, attempt, poseHub, games]);
 
   const send = useCallback(<T>(type: string, message: T) => {
     roomRef.current?.send(type, message);
@@ -196,6 +232,27 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
       endSession: () => send(RealmMessage.endSession, {}),
       sendChat: (text: string) => send(RealmMessage.chat, { text }),
       raiseHand: (raised: boolean) => send(RealmMessage.raiseHand, { raised }),
+      /**
+       * Claims a seat of the room's layout: true once it's yours, false if someone's sitting
+       * there, null if the realm didn't answer (not connected).
+       */
+      sit: (seatId: number) =>
+        new Promise<boolean | null>((resolve) => {
+          const room = roomRef.current;
+          if (!room) return resolve(null);
+          sitting.current.get(seatId)?.(null);
+          const timer = setTimeout(() => {
+            sitting.current.delete(seatId);
+            resolve(null);
+          }, SIT_TIMEOUT_MS);
+          sitting.current.set(seatId, (ok) => {
+            clearTimeout(timer);
+            resolve(ok);
+          });
+          room.send(RealmMessage.sit, { seatId });
+        }),
+      /** Gets up: frees your seat. */
+      stand: () => send(RealmMessage.stand, {}),
       /** Listen in on the group `target` is in; null stops. */
       listenTo: (target: string | null) => send(RealmMessage.listenTo, { target }),
       /** Host, after the API moved the session: everyone (you included) loads the new room. */
@@ -214,6 +271,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
     error,
     participants,
     locked,
+    seats,
     selfId,
     joinInfo,
     mediaGrant,
@@ -221,6 +279,7 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
     notices,
     chat,
     poseHub,
+    games,
     ...actions,
   };
 }

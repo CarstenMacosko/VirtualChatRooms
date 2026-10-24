@@ -6,6 +6,7 @@ export interface TouchState {
   /** Accumulated look drag in CSS pixels since the last sample. */
   lookPx: { x: number; y: number };
   jumpQueued: boolean;
+  interactQueued: boolean;
 }
 
 export interface InputOptions {
@@ -25,6 +26,8 @@ const KEY_BINDINGS = {
   run: ["ShiftLeft", "ShiftRight"],
   jump: ["Space"],
   toggleCamera: ["KeyV"],
+  /** E as well while there's something to interact with (see `interactAvailable`). */
+  interact: ["KeyF"],
 } as const;
 type Action = keyof typeof KEY_BINDINGS;
 
@@ -37,7 +40,17 @@ const isTyping = (target: EventTarget | null) =>
  * read directly; touch comes from on-screen controls via `touch`.
  */
 export class InputSystem {
-  readonly touch: TouchState = { move: { x: 0, y: 0 }, lookPx: { x: 0, y: 0 }, jumpQueued: false };
+  readonly touch: TouchState = {
+    move: { x: 0, y: 0 },
+    lookPx: { x: 0, y: 0 },
+    jumpQueued: false,
+    interactQueued: false,
+  };
+  /**
+   * Set while something can be interacted with (a seat in front of you, or you're sitting): E
+   * then interacts instead of turning right, so "E Sit" works without stealing Q/E turning.
+   */
+  interactAvailable = false;
 
   private held = new Set<string>();
   private pressed = new Set<string>();
@@ -123,6 +136,11 @@ export class InputSystem {
     this.touch.jumpQueued = true;
   }
 
+  /** The on-screen "Sit" / "Stand up" button. */
+  queueInteract() {
+    this.touch.interactQueued = true;
+  }
+
   detach() {
     this.abort?.abort();
     this.abort = null;
@@ -154,7 +172,9 @@ export class InputSystem {
       keyMove.y + this.touch.move.y + pad.move.y,
     );
 
-    const keyTurn = (this.isHeld("turnLeft") ? 1 : 0) - (this.isHeld("turnRight") ? 1 : 0);
+    const eInteracts = this.interactAvailable;
+    const turnRight = this.isHeld("turnRight") && !eInteracts;
+    const keyTurn = (this.isHeld("turnLeft") ? 1 : 0) - (turnRight ? 1 : 0);
     const dragX = this.dragPx.x + this.touch.lookPx.x;
     const dragY = this.dragPx.y + this.touch.lookPx.y;
     intents.look.yaw = -dragX * this.lookSensitivity + (keyTurn - pad.look.x) * this.turnSpeed * dt;
@@ -164,11 +184,17 @@ export class InputSystem {
     intents.run = this.isHeld("run") || pad.run;
     intents.jump = this.wasPressed("jump") || this.touch.jumpQueued || pad.jump;
     intents.toggleCamera = this.wasPressed("toggleCamera") || pad.toggleCamera;
+    intents.interact =
+      this.wasPressed("interact") ||
+      (eInteracts && this.pressed.has("KeyE")) ||
+      this.touch.interactQueued ||
+      pad.interact;
 
     this.pressed.clear();
     this.dragPx = { x: 0, y: 0 };
     this.touch.lookPx = { x: 0, y: 0 };
     this.touch.jumpQueued = false;
+    this.touch.interactQueued = false;
     this.wheel = 0;
     return intents;
   }
@@ -180,6 +206,7 @@ export class InputSystem {
       run: false,
       jump: false,
       toggleCamera: false,
+      interact: false,
     };
     const pad = navigator.getGamepads?.().find((p) => p?.connected);
     if (!pad) return none;
@@ -194,6 +221,7 @@ export class InputSystem {
       run: !!buttons[10] || !!buttons[6], // left stick click or left trigger
       jump: edge(0), // A / cross
       toggleCamera: edge(3), // Y / triangle
+      interact: edge(2), // X / square
     };
   }
 }

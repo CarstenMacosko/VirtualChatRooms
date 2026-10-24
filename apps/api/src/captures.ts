@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
-import { type RoomInfo, ScanDetails, type SplatFormat, type UpAxis } from "@vcr/protocol";
+import { type RoomInfo, ScanDetails, type ScanFormat, type UpAxis } from "@vcr/protocol";
 import { processScan, ScanRejectedError } from "./capture/pipeline";
 import { ByoSplatProvider, type CaptureProvider, KiriProvider } from "./capture/providers";
 import type { Database } from "./db/client";
@@ -9,7 +9,7 @@ import type { LiveHub } from "./live";
 import type { ObjectStorage } from "./storage";
 
 export interface JobOptions {
-  format: SplatFormat;
+  format: ScanFormat;
   up?: UpAxis;
   heightMeters?: number;
 }

@@ -18,13 +18,16 @@ import {
   MeResponse,
   RecentCallsResponse,
   RoomInfo,
+  RoomSetup,
   RoomsResponse,
+  SceneAssets,
   SessionInfo,
   SessionsResponse,
   ShareInfo,
   StartCallResponse,
   VapidKeyResponse,
   type DevLoginRequest,
+  type RoomSetupInput,
   type ExchangeRequest,
   type PushSubscriptionRequest,
   type AcceptInviteRequest,
@@ -125,6 +128,10 @@ export const api = {
   updateRoom: (id: string, body: UpdateRoomRequest) =>
     request(RoomInfo, `/rooms/${id}`, json("PATCH", body)),
   deleteRoom: (id: string) => request(NoContent, `/rooms/${id}`, { method: "DELETE" }),
+  /** A scanned room's manifest and files, for its owner to set it up. */
+  roomScene: (id: string) => request(SceneAssets, `/rooms/${id}/scene`),
+  saveRoomSetup: (id: string, setup: RoomSetupInput) =>
+    request(RoomSetup, `/rooms/${id}/setup`, json("PUT", setup)),
   sessions: () => request(SessionsResponse, "/sessions"),
   recentCalls: () => request(RecentCallsResponse, "/me/recent-calls"),
   session: (id: string) => request(SessionInfo, `/sessions/${id}`),

@@ -14,7 +14,9 @@ export interface Intents {
   jump: boolean;
   /** Edge-triggered: switch between third- and first-person. */
   toggleCamera: boolean;
-  // Later phases add: sit, interact, emote, teleport (VR).
+  /** Edge-triggered: use what's in front of you (sit down on a seat, or get up). */
+  interact: boolean;
+  // Later phases add: emote, teleport (VR).
 }
 
 export function emptyIntents(): Intents {
@@ -25,6 +27,7 @@ export function emptyIntents(): Intents {
     run: false,
     jump: false,
     toggleCamera: false,
+    interact: false,
   };
 }
 

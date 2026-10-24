@@ -125,11 +125,18 @@ const PLY_TYPES: Record<string, { size: number; read: (b: Buffer, o: number) => 
   float64: { size: 8, read: (b, o) => b.readDoubleLE(o) },
 };
 
+interface PlyProperty {
+  offset: number;
+  /** Bytes; 1- and 2-byte properties are integers. */
+  size: number;
+  read: (b: Buffer, o: number) => number;
+}
+
 interface PlyElement {
   name: string;
   count: number;
   size: number;
-  props: Map<string, { offset: number; read: (b: Buffer, o: number) => number }>;
+  props: Map<string, PlyProperty>;
 }
 
 export function parsePlyHeader(text: string): PlyElement[] {
@@ -154,11 +161,40 @@ export function parsePlyHeader(text: string): PlyElement[] {
       }
       const type = PLY_TYPES[rest[0]!];
       if (!type) throw new SplatFileError(`Unknown PLY property type "${rest[0]}".`);
-      element.props.set(rest[1]!, { offset: element.size, read: type.read });
+      element.props.set(rest[1]!, { offset: element.size, size: type.size, read: type.read });
       element.size += type.size;
     }
   }
   return elements;
+}
+
+/** Reads the ASCII header (it ends with "end_header\n" and is well under 64 KB). */
+async function readPlyHeader(reader: ByteReader): Promise<PlyElement[]> {
+  let headerEnd = -1;
+  for (let want = 4096; headerEnd < 0; want *= 2) {
+    const got = await reader.fill(want);
+    const head = reader.peekAll();
+    if (
+      head.subarray(0, 4).toString("latin1") !== "ply\n" &&
+      head.subarray(0, 5).toString("latin1") !== "ply\r\n"
+    ) {
+      throw new SplatFileError("This isn't a PLY file.");
+    }
+    const at = head.indexOf("end_header");
+    if (at >= 0) headerEnd = head.indexOf(0x0a, at) + 1;
+    if (headerEnd <= 0 && (got < want || want > 1 << 20)) {
+      throw new SplatFileError("The PLY header is malformed.");
+    }
+  }
+  return parsePlyHeader((await reader.read(headerEnd)).toString("latin1"));
+}
+
+/** Skips the elements stored before the vertices (none, in the files we see). */
+async function skipToVertices(reader: ByteReader, elements: PlyElement[], vertex: PlyElement) {
+  for (const element of elements) {
+    if (element === vertex) break;
+    await reader.records(element.count, element.size, () => {});
+  }
 }
 
 async function readPly(
@@ -167,24 +203,7 @@ async function readPly(
 ): Promise<SplatPoints> {
   const reader = new ByteReader(source);
   try {
-    // The header is ASCII and ends with "end_header\n"; it's well under 64 KB.
-    let headerEnd = -1;
-    for (let want = 4096; headerEnd < 0; want *= 2) {
-      const got = await reader.fill(want);
-      const head = reader.peekAll();
-      if (
-        head.subarray(0, 4).toString("latin1") !== "ply\n" &&
-        head.subarray(0, 5).toString("latin1") !== "ply\r\n"
-      ) {
-        throw new SplatFileError("This isn't a PLY file.");
-      }
-      const at = head.indexOf("end_header");
-      if (at >= 0) headerEnd = head.indexOf(0x0a, at) + 1;
-      if (headerEnd <= 0 && (got < want || want > 1 << 20)) {
-        throw new SplatFileError("The PLY header is malformed.");
-      }
-    }
-    const elements = parsePlyHeader((await reader.read(headerEnd)).toString("latin1"));
+    const elements = await readPlyHeader(reader);
     const vertex = elements.find((e) => e.name === "vertex");
     if (!vertex) throw new SplatFileError("The PLY file has no splats.");
     checkCount(vertex.count, opts.maxSplats);
@@ -264,6 +283,81 @@ async function readPly(
       }
     });
     return { count: vertex.count, positions, opacity, stride };
+  } finally {
+    await reader.close();
+  }
+}
+
+// --- Point clouds ---------------------------------------------------------------------------
+
+/**
+ * Whether a PLY header describes a plain colored point cloud (Scaniverse's and Polycam's
+ * "point cloud" export: positions and colors, maybe normals) rather than Gaussian splats. Those
+ * have no sizes, so they need converting before they look like anything (see surfels.ts).
+ */
+export function isPointCloudPly(head: Buffer): boolean {
+  const at = head.indexOf("end_header");
+  if (at < 0) return false;
+  let elements: PlyElement[];
+  try {
+    elements = parsePlyHeader(head.subarray(0, at).toString("latin1"));
+  } catch {
+    return false;
+  }
+  const vertex = elements.find((e) => e.name === "vertex");
+  if (!vertex || elements.some((e) => e.name === "chunk")) return false;
+  return !["scale_0", "f_dc_0", "opacity"].some((name) => vertex.props.has(name));
+}
+
+export interface PointCloud {
+  count: number;
+  /** xyz interleaved, as stored. */
+  positions: Float32Array;
+  /** rgb interleaved, 0–255 (light gray when the file has no colors). */
+  colors: Uint8Array;
+}
+
+/** Reads every point of a point-cloud PLY: positions and colors. */
+export async function readPointCloud(
+  source: Readable,
+  opts: { maxSplats?: number } = {},
+): Promise<PointCloud> {
+  const reader = new ByteReader(source);
+  try {
+    const elements = await readPlyHeader(reader);
+    const vertex = elements.find((e) => e.name === "vertex");
+    if (!vertex) throw new SplatFileError("The PLY file has no points.");
+    checkCount(vertex.count, opts.maxSplats);
+    const x = vertex.props.get("x");
+    const y = vertex.props.get("y");
+    const z = vertex.props.get("z");
+    if (!x || !y || !z) throw new SplatFileError("The PLY file has no point positions.");
+    const channel = (name: string) => vertex.props.get(name) ?? vertex.props.get(`diffuse_${name}`);
+    const rgb = [channel("red"), channel("green"), channel("blue")];
+    const colorOf = rgb.every(Boolean)
+      ? rgb.map((p) => {
+          // Colors are bytes, 16-bit, or 0–1 floats.
+          const k = p!.size === 1 ? 1 : p!.size === 2 ? 1 / 257 : 255;
+          return (b: Buffer, at: number) =>
+            Math.max(0, Math.min(255, Math.round(p!.read(b, at + p!.offset) * k)));
+        })
+      : null;
+    const positions = new Float32Array(vertex.count * 3);
+    const colors = new Uint8Array(vertex.count * 3).fill(200);
+    await skipToVertices(reader, elements, vertex);
+    await reader.records(vertex.count, vertex.size, (buf, first, n) => {
+      for (let i = 0; i < n; i++) {
+        const at = i * vertex.size;
+        const k = (first + i) * 3;
+        positions[k] = x.read(buf, at + x.offset);
+        positions[k + 1] = y.read(buf, at + y.offset);
+        positions[k + 2] = z.read(buf, at + z.offset);
+        if (colorOf) {
+          for (let a = 0; a < 3; a++) colors[k + a] = colorOf[a]!(buf, at);
+        }
+      }
+    });
+    return { count: vertex.count, positions, colors };
   } finally {
     await reader.close();
   }
@@ -395,9 +489,66 @@ export function writePly(splats: readonly SplatRecord[]): Buffer {
   return Buffer.concat([Buffer.from(header, "latin1"), body]);
 }
 
+/** A plain colored point cloud, like Scaniverse's "point cloud" PLY export. */
+export function writePointCloudPly(
+  points: ReadonlyArray<{ position: readonly number[]; color: readonly number[] }>,
+): Buffer {
+  const header =
+    [
+      "ply",
+      "format binary_little_endian 1.0",
+      `element vertex ${points.length}`,
+      ...["x", "y", "z"].map((p) => `property float ${p}`),
+      ...["red", "green", "blue"].map((p) => `property uchar ${p}`),
+      "end_header",
+    ].join("\n") + "\n";
+  const body = Buffer.alloc(points.length * 15);
+  points.forEach((p, i) => {
+    for (let a = 0; a < 3; a++) {
+      body.writeFloatLE(p.position[a]!, i * 15 + a * 4);
+      body[i * 15 + 12 + a] = Math.max(0, Math.min(255, Math.round(p.color[a]! * 255)));
+    }
+  });
+  return Buffer.concat([Buffer.from(header, "latin1"), body]);
+}
+
+/** Splats as parallel arrays, for writing millions without an object each. */
+export interface SplatColumns {
+  count: number;
+  /** xyz */
+  positions: Float32Array;
+  /** Per-axis standard deviation, xyz. */
+  scales: Float32Array;
+  /** xyzw */
+  rotations: Float32Array;
+  opacity: Float32Array;
+  /** rgb, 0–255 */
+  colors: Uint8Array;
+}
+
 /** An SPZ v2 file (gzip-compressed, 12 fractional bits, no spherical harmonics). */
 export function writeSpz(splats: readonly SplatRecord[], fractionalBits = 12): Buffer {
   const n = splats.length;
+  const columns: SplatColumns = {
+    count: n,
+    positions: new Float32Array(n * 3),
+    scales: new Float32Array(n * 3),
+    rotations: new Float32Array(n * 4),
+    opacity: new Float32Array(n),
+    colors: new Uint8Array(n * 3),
+  };
+  splats.forEach((s, i) => {
+    columns.positions.set(s.position, i * 3);
+    columns.scales.set(s.scale, i * 3);
+    columns.rotations.set(s.rotation, i * 4);
+    columns.opacity[i] = s.opacity;
+    for (let a = 0; a < 3; a++) columns.colors[i * 3 + a] = Math.round(s.color[a]! * 255);
+  });
+  return writeSpzColumns(columns, fractionalBits);
+}
+
+export function writeSpzColumns(splats: SplatColumns, fractionalBits = 12): Buffer {
+  const n = splats.count;
   const header = Buffer.alloc(16);
   header.writeUInt32LE(SPZ_MAGIC, 0);
   header.writeUInt32LE(2, 4);
@@ -410,17 +561,18 @@ export function writeSpz(splats: readonly SplatRecord[], fractionalBits = 12): B
   const scales = Buffer.alloc(n * 3);
   const rotations = Buffer.alloc(n * 3);
   const byte = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
-  splats.forEach((s, i) => {
+  const { positions: p, scales: s, rotations: r, colors: c } = splats;
+  for (let i = 0; i < n; i++) {
     for (let a = 0; a < 3; a++) {
-      const fixed = Math.round(s.position[a]! * (1 << fractionalBits));
+      const fixed = Math.round(p[i * 3 + a]! * (1 << fractionalBits));
       positions.writeIntLE(Math.max(-0x800000, Math.min(0x7fffff, fixed)), i * 9 + a * 3, 3);
-      colors[i * 3 + a] = byte((((s.color[a]! - 0.5) / SH_C0) * 0.15 + 0.5) * 255);
-      scales[i * 3 + a] = byte((Math.log(Math.max(s.scale[a]!, 1e-6)) + 10) * 16);
+      colors[i * 3 + a] = byte(((c[i * 3 + a]! / 255 - 0.5) / SH_C0) * 0.15 * 255 + 127.5);
+      scales[i * 3 + a] = byte((Math.log(Math.max(s[i * 3 + a]!, 1e-6)) + 10) * 16);
     }
-    alphas[i] = byte(s.opacity * 255);
+    alphas[i] = byte(splats.opacity[i]! * 255);
     // v2 stores x, y, z of a quaternion with w ≥ 0.
-    const sign = s.rotation[3] < 0 ? -1 : 1;
-    for (let a = 0; a < 3; a++) rotations[i * 3 + a] = byte((sign * s.rotation[a]! + 1) * 127.5);
-  });
+    const sign = r[i * 4 + 3]! < 0 ? -1 : 1;
+    for (let a = 0; a < 3; a++) rotations[i * 3 + a] = byte((sign * r[i * 4 + a]! + 1) * 127.5);
+  }
   return gzipSync(Buffer.concat([header, positions, alphas, colors, scales, rotations]));
 }

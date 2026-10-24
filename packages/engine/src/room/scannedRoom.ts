@@ -1,4 +1,4 @@
-import type { ManifestTransform, RoomManifest } from "@vcr/protocol";
+import type { ManifestTransform, RoomManifest, Seat, Table, Walkway } from "@vcr/protocol";
 import type { Vec3 } from "../math";
 import { SAMPLE_ROOM } from "./sampleRoom";
 
@@ -10,12 +10,21 @@ export interface RoomLayout {
   bounds: { min: Vec3; max: Vec3 };
   spawnPoints: Array<{ position: Vec3; yaw: number }>;
   lighting: { ambientColor: string; intensity: number };
+  /** Where people can sit. */
+  seats: Seat[];
+  /** Tables games are played on. */
+  tables: Table[];
+  /** Floor kept walkable through the collision mesh (world X/Z rectangles). */
+  walkways: Walkway[];
 }
 
 export const SAMPLE_ROOM_LAYOUT: RoomLayout = {
   bounds: SAMPLE_ROOM.bounds,
   spawnPoints: SAMPLE_ROOM.spawnPoints,
   lighting: SAMPLE_ROOM.lighting,
+  seats: SAMPLE_ROOM.seats,
+  tables: SAMPLE_ROOM.tables,
+  walkways: [],
 };
 
 export function scannedRoomLayout(manifest: RoomManifest): RoomLayout {
@@ -23,6 +32,9 @@ export function scannedRoomLayout(manifest: RoomManifest): RoomLayout {
     bounds: manifest.bounds,
     spawnPoints: manifest.spawnPoints,
     lighting: manifest.lighting,
+    seats: manifest.seats,
+    tables: manifest.tables,
+    walkways: manifest.walkways,
   };
 }
 

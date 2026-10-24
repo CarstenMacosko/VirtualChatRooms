@@ -365,7 +365,7 @@ const scanSession = SessionInfo.parse(
 const scanJoin = JoinSessionResponse.parse(
   await (await call("POST", `/sessions/${scanSession.id}/join`, alice.token)).json(),
 );
-const splatKey = scanJoin.scene?.manifest.splat.key ?? "";
+const splatKey = scanJoin.scene?.manifest.splat?.key ?? "";
 const splatUrl = signed(scanJoin.scene?.urls[splatKey] ?? "/missing");
 const splatRes = await fetch(splatUrl);
 const splatBytes = Buffer.from(await splatRes.arrayBuffer());

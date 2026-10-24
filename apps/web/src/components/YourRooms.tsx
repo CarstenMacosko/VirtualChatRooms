@@ -1,6 +1,26 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
-import type { CaptureOptions, RoomInfo, UpAxis } from "@vcr/protocol";
+import { type FormEvent, lazy, Suspense, useEffect, useRef, useState } from "react";
+import { type CaptureOptions, type RoomInfo, SCAN_FILE_PATTERN, type UpAxis } from "@vcr/protocol";
 import { api, ApiRequestError, uploadParts } from "../lib/api";
+
+const RoomSetupEditor = lazy(() => import("../world/RoomSetupEditor"));
+
+/** Rooms whose owner has been offered the setup editor (once per room, per browser). */
+const SETUP_OFFERED_KEY = "vcr.setupOffered";
+const setupOffered = (id: string) => {
+  try {
+    return (JSON.parse(localStorage.getItem(SETUP_OFFERED_KEY) ?? "[]") as string[]).includes(id);
+  } catch {
+    return true;
+  }
+};
+const markSetupOffered = (id: string) => {
+  try {
+    const ids = JSON.parse(localStorage.getItem(SETUP_OFFERED_KEY) ?? "[]") as string[];
+    localStorage.setItem(SETUP_OFFERED_KEY, JSON.stringify([...ids, id].slice(-50)));
+  } catch {
+    // Private mode: the offer just shows again next time.
+  }
+};
 
 const errorText = (err: unknown) =>
   err instanceof ApiRequestError ? err.message : "Something went wrong. Try again.";
@@ -59,8 +79,17 @@ export function YourRooms(props: {
 
 function RoomRow({ room, onChanged }: { room: RoomInfo; onChanged(): void }) {
   const [open, setOpen] = useState(false);
+  const [settingUp, setSettingUp] = useState(false);
+  const [offer, setOffer] = useState(() => !setupOffered(room.id));
   const [error, setError] = useState<string | null>(null);
   const scan = room.scan;
+  const ready = room.kind === "scan" && room.status === "ready";
+
+  const setUp = () => {
+    markSetupOffered(room.id);
+    setOffer(false);
+    setSettingUp(true);
+  };
 
   const remove = async () => {
     if (!window.confirm(`Delete "${room.name}"? Its scan is deleted too.`)) return;
@@ -93,6 +122,11 @@ function RoomRow({ room, onChanged }: { room: RoomInfo; onChanged(): void }) {
         </span>
         {room.kind === "scan" && (
           <span className="row">
+            {ready && (
+              <button className="link" onClick={setUp}>
+                Set up
+              </button>
+            )}
             {room.status === "ready" && (
               <button className="link" onClick={() => setOpen(!open)}>
                 {open ? "Done" : "Adjust"}
@@ -106,7 +140,37 @@ function RoomRow({ room, onChanged }: { room: RoomInfo; onChanged(): void }) {
       </div>
       {room.status === "processing" && <Progress value={room.progress ?? 0} />}
       {room.status === "failed" && room.error && <p className="error">{room.error}</p>}
+      {room.status === "ready" && scan?.pointCloud && (
+        <p className="muted">
+          Made from a point cloud, so fine detail is soft. For a sharper room, export the same scan
+          as a textured mesh (<b>GLB</b>) and upload that instead.
+        </p>
+      )}
+      {ready && offer && (
+        <div className="callout setup-offer">
+          <span>Your room is ready. Show people where to sit, play and walk.</span>
+          <span className="row">
+            <button className="primary small" onClick={setUp}>
+              Set up seats, tables and walkways
+            </button>
+            <button
+              className="ghost small"
+              onClick={() => {
+                markSetupOffered(room.id);
+                setOffer(false);
+              }}
+            >
+              Not now
+            </button>
+          </span>
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
+      {settingUp && (
+        <Suspense fallback={<div className="setup-editor world-loading">Loading…</div>}>
+          <RoomSetupEditor room={room} onClose={() => setSettingUp(false)} />
+        </Suspense>
+      )}
       {open && scan && (
         <AdjustRoom
           room={room}
@@ -224,19 +288,14 @@ function AddScan(props: {
     setFile(f);
     setError(null);
     if (f && !name)
-      setName(
-        f.name
-          .replace(/\.(ply|spz)$/i, "")
-          .replace(/[_-]+/g, " ")
-          .slice(0, 60),
-      );
+      setName(f.name.replace(SCAN_FILE_PATTERN, "").replace(/[_-]+/g, " ").slice(0, 60));
   };
 
   async function upload(e: FormEvent) {
     e.preventDefault();
     if (!file) return;
-    if (!/\.(ply|spz)$/i.test(file.name)) {
-      setError("Choose a .ply or .spz file exported from your scanning app.");
+    if (!SCAN_FILE_PATTERN.test(file.name)) {
+      setError("Choose a .ply, .spz or .glb file exported from your scanning app.");
       return;
     }
     setError(null);
@@ -269,14 +328,17 @@ function AddScan(props: {
       <h3>Add a room from a scan</h3>
       <p className="muted">
         Scan your room with a free phone app, export it as a Gaussian splat (<b>.spz</b> or{" "}
-        <b>.ply</b>), and upload it here. Gatherings can then happen in your own room.
+        <b>.ply</b>) or a textured mesh (<b>.glb</b>), and upload it here. Gatherings can then
+        happen in your own room.
       </p>
       <details>
         <summary>How to export from Scaniverse, Polycam or KIRI</summary>
         <ul className="howto">
           <li>
             <b>Scaniverse</b> (free, iPhone and Android): scan in <i>Splat</i> mode, open the scan,
-            tap <i>Share</i> / <i>Export</i>, and pick <b>SPZ</b> (smallest) or <b>PLY</b>.
+            tap <i>Share</i> / <i>Export</i>, and pick <b>SPZ</b> (smallest) or <b>PLY</b>. For a
+            mesh scan, export <b>GLB</b>: it keeps the photo textures. (A <i>point cloud</i> PLY
+            works too, but looks much softer.)
           </li>
           <li>
             <b>Polycam</b>: make a <i>Gaussian Splat</i> capture, then <i>Export</i> it as a splat{" "}
@@ -305,7 +367,7 @@ function AddScan(props: {
         Scan file
         <input
           type="file"
-          accept=".ply,.spz"
+          accept=".ply,.spz,.glb"
           onChange={(e) => pick(e.target.files?.[0] ?? null)}
           disabled={uploading}
         />

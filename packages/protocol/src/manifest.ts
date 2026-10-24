@@ -10,14 +10,21 @@ import { z } from "zod";
  * Bounds, spawn points, seats and zones are already in world space.
  *
  * v2 (Phase 4) adds the explicit file-to-world `transform.rotation` / `transform.translation`,
- * `splat.format`, `collision.format` and `transform.scaleSource`. v1 manifests are migrated on
- * parse (`migrateManifestV1`).
+ * `splat.format`, `collision.format` and `transform.scaleSource`. v3 lets a room be a textured
+ * mesh instead of splats: exactly one of `splat` and `mesh` is set. Older manifests are migrated
+ * on parse (`migrateManifestV1`, `migrateManifestV2`).
+ *
+ * Room setup (what the owner sets after uploading, see `RoomSetup` in rooms.ts): `walkways` open
+ * paths the collision mesh blocks, `seats` are where people can sit, and `tables` are where games
+ * can be played. Post-processing may suggest seats and tables (`source: "auto"`).
  */
 
-export const SUPPORTED_MANIFEST_VERSION = 2;
+export const SUPPORTED_MANIFEST_VERSION = 3;
 
 const Vec3 = z.tuple([z.number(), z.number(), z.number()]);
 type Vec3 = z.infer<typeof Vec3>;
+/** World X and Z, meters. */
+const Vec2 = z.tuple([z.number(), z.number()]);
 /** [x, y, z, w] */
 const Quat = z.tuple([z.number(), z.number(), z.number(), z.number()]);
 const StorageKey = z.string().min(1);
@@ -32,14 +39,64 @@ const SplatAsset = z.looseObject({
   format: SplatFormat,
 });
 
+/** A textured mesh room (a photogrammetry scan's GLB), drawn as it was captured. */
+const MeshAsset = z.looseObject({
+  key: StorageKey,
+  triangles: z.number().int().positive(),
+  format: z.literal("glb"),
+});
+
+/** Who placed a seat or table: post-processing's furniture detection, or the room's owner. */
+export const SetupSource = z.enum(["auto", "user"]);
+export type SetupSource = z.infer<typeof SetupSource>;
+
+/**
+ * Somewhere one person can sit (a couch has one per cushion). `position` is the point on the
+ * seat surface the hips rest on (world space), `yaw` the direction the sitter faces, `height`
+ * the seat surface above the floor.
+ */
 export const Seat = z.looseObject({
   id: z.number().int().nonnegative().max(0xffff),
   position: Vec3,
   yaw: z.number(),
   height: z.number().positive(),
   kind: z.enum(["chair", "sofa", "bench", "floor"]),
+  source: SetupSource.default("user"),
 });
 export type Seat = z.infer<typeof Seat>;
+
+/**
+ * A rectangle of floor (world X/Z, axis-aligned: rooms are squared to X and Z) that people can
+ * walk through even where the collision mesh says otherwise, e.g. scan clutter in a doorway.
+ * Collision above the floor inside it is removed; the floor stays.
+ */
+export const Walkway = z
+  .looseObject({ id: z.string().min(1).max(40), min: Vec2, max: Vec2 })
+  .refine((w) => w.min[0] < w.max[0] && w.min[1] < w.max[1], {
+    message: "A walkway's min must be below its max.",
+  });
+export type Walkway = z.infer<typeof Walkway>;
+
+/** Games a table can host. */
+export const TableGame = z.enum(["jigsaw"]);
+export type TableGame = z.infer<typeof TableGame>;
+
+/**
+ * A table games are played on. `center` is the middle of the tabletop (world space, at its
+ * surface), `yaw` turns the table's local X axis about +Y, and `size` is its [width, depth]
+ * along local X and Z, in meters.
+ */
+export const Table = z.looseObject({
+  id: z.string().min(1).max(40),
+  name: z.string().max(40).default(""),
+  center: Vec3,
+  yaw: z.number(),
+  size: z.tuple([z.number().positive().max(10), z.number().positive().max(10)]),
+  source: SetupSource.default("user"),
+  /** Games people can start here; empty for a suggested table nobody has set up. */
+  games: z.array(TableGame).default([]),
+});
+export type Table = z.infer<typeof Table>;
 
 const ZoneShape = z.discriminatedUnion("type", [
   z.looseObject({ type: z.literal("circle"), center: Vec3, radius: z.number().positive() }),
@@ -72,29 +129,39 @@ export const ManifestTransform = z.looseObject({
 });
 export type ManifestTransform = z.infer<typeof ManifestTransform>;
 
-export const RoomManifest = z.looseObject({
-  manifestVersion: z.literal(SUPPORTED_MANIFEST_VERSION),
-  roomId: z.string().min(1),
-  splat: SplatAsset.extend({ lods: z.array(SplatAsset).default([]) }),
-  /** A coarse triangle mesh (GLB) in file space, like the splat (ADR 0002). */
-  collision: z.looseObject({
-    key: StorageKey,
-    triangles: z.number().int().positive(),
-    format: z.literal("glb"),
-  }),
-  navmesh: z.looseObject({ key: StorageKey }).nullable().default(null),
-  transform: ManifestTransform,
-  bounds: z.looseObject({ min: Vec3, max: Vec3 }),
-  spawnPoints: z.array(z.looseObject({ position: Vec3, yaw: z.number() })).min(1),
-  seats: z.array(Seat).default([]),
-  zones: z.array(Zone).default([]),
-  lighting: z
-    .looseObject({
-      ambientColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-      intensity: z.number().nonnegative(),
-    })
-    .default({ ambientColor: "#ffffff", intensity: 1 }),
-});
+export const RoomManifest = z
+  .looseObject({
+    manifestVersion: z.literal(SUPPORTED_MANIFEST_VERSION),
+    roomId: z.string().min(1),
+    /** What the room looks like: splats or a textured mesh (exactly one). */
+    splat: SplatAsset.extend({ lods: z.array(SplatAsset).default([]) })
+      .nullable()
+      .default(null),
+    mesh: MeshAsset.nullable().default(null),
+    /** A coarse triangle mesh (GLB) in file space, like the splat or mesh (ADR 0002). */
+    collision: z.looseObject({
+      key: StorageKey,
+      triangles: z.number().int().positive(),
+      format: z.literal("glb"),
+    }),
+    navmesh: z.looseObject({ key: StorageKey }).nullable().default(null),
+    transform: ManifestTransform,
+    bounds: z.looseObject({ min: Vec3, max: Vec3 }),
+    spawnPoints: z.array(z.looseObject({ position: Vec3, yaw: z.number() })).min(1),
+    seats: z.array(Seat).default([]),
+    walkways: z.array(Walkway).default([]),
+    tables: z.array(Table).default([]),
+    zones: z.array(Zone).default([]),
+    lighting: z
+      .looseObject({
+        ambientColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+        intensity: z.number().nonnegative(),
+      })
+      .default({ ambientColor: "#ffffff", intensity: 1 }),
+  })
+  .refine((m) => (m.splat === null) !== (m.mesh === null), {
+    message: "A room has either splats or a mesh.",
+  });
 export type RoomManifest = z.infer<typeof RoomManifest>;
 export type RoomManifestInput = z.input<typeof RoomManifest>;
 
@@ -149,6 +216,11 @@ export function migrateManifestV1(v1: Record<string, unknown>): Record<string, u
   };
 }
 
+/** v2 → v3: every v2 room is splats. */
+export function migrateManifestV2(v2: Record<string, unknown>): Record<string, unknown> {
+  return { ...v2, manifestVersion: 3, mesh: null };
+}
+
 export function parseRoomManifest(input: unknown): RoomManifest {
   const version = (input as { manifestVersion?: unknown } | null)?.manifestVersion;
   if (typeof version === "number" && version > SUPPORTED_MANIFEST_VERSION) {
@@ -156,6 +228,8 @@ export function parseRoomManifest(input: unknown): RoomManifest {
       `manifest version ${version} is newer than this client supports (${SUPPORTED_MANIFEST_VERSION})`,
     );
   }
-  if (version === 1) return RoomManifest.parse(migrateManifestV1(input as Record<string, unknown>));
-  return RoomManifest.parse(input);
+  let manifest = input as Record<string, unknown>;
+  if (version === 1) manifest = migrateManifestV1(manifest);
+  if (version === 1 || version === 2) manifest = migrateManifestV2(manifest);
+  return RoomManifest.parse(manifest);
 }

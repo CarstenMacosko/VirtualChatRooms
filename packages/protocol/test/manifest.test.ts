@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseRoomManifest, rotationToYUp, UnsupportedManifestError } from "../src/manifest";
 
 const minimal = {
-  manifestVersion: 2,
+  manifestVersion: 3,
   roomId: "rm_123",
   splat: { key: "rooms/rm_123/room.spz", count: 1_450_000, format: "spz" },
   collision: { key: "rooms/rm_123/collision.glb", triangles: 38_000, format: "glb" },
@@ -21,14 +21,31 @@ const minimal = {
 describe("room manifest", () => {
   it("fills defaults for optional sections", () => {
     const m = parseRoomManifest(minimal);
-    expect(m.splat.lods).toEqual([]);
+    expect(m.splat?.lods).toEqual([]);
+    expect(m.mesh).toBeNull();
     expect(m.navmesh).toBeNull();
     expect(m.seats).toEqual([]);
+    expect(m.walkways).toEqual([]);
+    expect(m.tables).toEqual([]);
     expect(m.zones).toEqual([]);
     expect(m.lighting).toEqual({ ambientColor: "#ffffff", intensity: 1 });
   });
 
-  it("keeps fields it doesn't know about, so newer v2 manifests still load", () => {
+  it("reads the room's setup: walkways, seats and game tables", () => {
+    const m = parseRoomManifest({
+      ...minimal,
+      walkways: [{ id: "hall", min: [-1, 2], max: [0, 4] }],
+      seats: [{ id: 7, position: [1, 0.45, -2], yaw: 0, height: 0.45, kind: "sofa" }],
+      tables: [{ id: "coffee", center: [0, 0.4, 0], yaw: 0, size: [1, 0.5], source: "auto" }],
+    });
+    expect(m.seats[0]!.source).toBe("user");
+    expect(m.tables[0]).toMatchObject({ name: "", games: [], source: "auto" });
+    expect(() =>
+      parseRoomManifest({ ...minimal, walkways: [{ id: "w", min: [1, 0], max: [1, 2] }] }),
+    ).toThrow();
+  });
+
+  it("keeps fields it doesn't know about, so newer v3 manifests still load", () => {
     const m = parseRoomManifest({
       ...minimal,
       futureFeature: { enabled: true },
@@ -36,6 +53,15 @@ describe("room manifest", () => {
     });
     expect((m as Record<string, unknown>).futureFeature).toEqual({ enabled: true });
     expect((m.splat as Record<string, unknown>).shDegree).toBe(3);
+  });
+
+  it("accepts a textured mesh room instead of splats, but not both or neither", () => {
+    const mesh = { key: "rooms/rm_123/scan.glb", triangles: 400_000, format: "glb" };
+    const m = parseRoomManifest({ ...minimal, splat: null, mesh });
+    expect(m.mesh).toEqual(mesh);
+    expect(m.splat).toBeNull();
+    expect(() => parseRoomManifest({ ...minimal, mesh })).toThrow(/either splats or a mesh/);
+    expect(() => parseRoomManifest({ ...minimal, splat: null })).toThrow(/either splats or a mesh/);
   });
 
   it("accepts seats and zones", () => {
@@ -59,7 +85,7 @@ describe("room manifest", () => {
   });
 
   it("rejects manifests from a newer major version with a clear error", () => {
-    expect(() => parseRoomManifest({ ...minimal, manifestVersion: 3 })).toThrow(
+    expect(() => parseRoomManifest({ ...minimal, manifestVersion: 4 })).toThrow(
       UnsupportedManifestError,
     );
   });
@@ -74,12 +100,20 @@ describe("room manifest", () => {
       bounds: { min: [-1, 0, -1], max: [1, 2, 1] },
       spawnPoints: [{ position: [0, 0, 0], yaw: 0 }],
     });
-    expect(m.manifestVersion).toBe(2);
-    expect(m.splat.format).toBe("ply");
+    expect(m.manifestVersion).toBe(3);
+    expect(m.splat?.format).toBe("ply");
+    expect(m.mesh).toBeNull();
     expect(m.collision.format).toBe("glb");
     expect(m.transform.rotation).toEqual([1, 0, 0, 0]);
     expect(m.transform.translation).toEqual([0, -1, 0]);
     expect(m.transform.scaleSource).toBe("file");
+  });
+
+  it("migrates v2 manifests: every v2 room is splats", () => {
+    const m = parseRoomManifest({ ...minimal, manifestVersion: 2 });
+    expect(m.manifestVersion).toBe(3);
+    expect(m.splat?.key).toBe(minimal.splat.key);
+    expect(m.mesh).toBeNull();
   });
 
   it("rotates any up direction onto +Y", () => {

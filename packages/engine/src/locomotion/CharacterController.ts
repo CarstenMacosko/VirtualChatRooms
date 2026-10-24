@@ -1,7 +1,8 @@
 import type RAPIER from "@dimforge/rapier3d-compat";
 import { LocoState } from "@vcr/protocol";
-import { damp, dampAngle, type Vec3, yawFromDirection } from "../math";
+import { clamp, damp, dampAngle, lerp, lerpAngle, type Vec3, yawFromDirection } from "../math";
 import type { PhysicsWorld } from "./physics";
+import { inFrontOfSeat, type SeatTarget, seatFloorPoint, SITTING, standSpot } from "./sitting";
 
 export const CHARACTER = {
   radius: 0.28,
@@ -37,6 +38,28 @@ export interface CharacterState {
   loco: LocoState;
   /** Horizontal speed, m/s. */
   speed: number;
+  /** The seat you're sitting on, getting onto or getting up from. */
+  seatId?: number;
+  /** 0 standing … 1 seated: how far the hips are lowered onto the seat. */
+  sitAmount: number;
+}
+
+/**
+ * Sitting is a short scripted move with physics off (the capsule would fight the couch's
+ * collision): glide to the front of the seat while turning to face its way, lower onto it, stay,
+ * then get up onto open floor in front of it (ADR 0020).
+ */
+export type SeatPhase = "approach" | "lower" | "seated" | "rise";
+interface Seating {
+  seat: SeatTarget;
+  phase: SeatPhase;
+  t: number;
+  duration: number;
+  from: Vec3;
+  to: Vec3;
+  fromYaw: number;
+  /** Where you sat down from: the stand-up spot of last resort. */
+  cameFrom: Vec3;
 }
 
 /**
@@ -52,6 +75,7 @@ export class CharacterController {
   /** Intended horizontal velocity (m/s), before collisions. */
   private planar = { x: 0, z: 0 };
   private vy = 0;
+  private seating: Seating | null = null;
 
   constructor(
     private readonly physics: PhysicsWorld,
@@ -81,6 +105,7 @@ export class CharacterController {
       grounded: false,
       loco: LocoState.idle,
       speed: 0,
+      sitAmount: 0,
     };
   }
 
@@ -88,7 +113,13 @@ export class CharacterController {
     return this.state;
   }
 
+  /** The seat you're on (or on your way onto or off), and where in that you are. */
+  get seat(): { seat: SeatTarget; phase: SeatPhase } | null {
+    return this.seating && { seat: this.seating.seat, phase: this.seating.phase };
+  }
+
   teleport(position: Vec3, yaw: number) {
+    if (this.seating) this.leaveSeat();
     const c = this.centerFromFeet(position);
     this.body.setTranslation(c, true);
     this.body.setNextKinematicTranslation(c);
@@ -99,7 +130,59 @@ export class CharacterController {
     this.state.yaw = yaw;
   }
 
+  /** Starts sitting down on `seat` (claim it first). Ignored if you're already on a seat. */
+  sitDown(seat: SeatTarget) {
+    if (this.seating) return;
+    const s = this.state;
+    const to = inFrontOfSeat(seat, SITTING.approach);
+    const distance = Math.hypot(to[0] - s.position[0], to[2] - s.position[2]);
+    this.collider.setEnabled(false);
+    this.planar = { x: 0, z: 0 };
+    this.vy = 0;
+    this.seating = {
+      seat,
+      phase: "approach",
+      t: 0,
+      duration: clamp(distance / SITTING.glideSpeed, 0.15, SITTING.maxGlide),
+      from: [...s.position],
+      to,
+      fromYaw: s.yaw,
+      cameFrom: [...s.position],
+    };
+    s.seatId = seat.id;
+  }
+
+  /**
+   * Gets up from the seat onto the first open spot in front of it (`fits` says whether a spot is
+   * clear; by default the capsule must fit there). Before you've sat down it just stops.
+   */
+  standUp(fits?: (feet: Vec3) => boolean) {
+    const seating = this.seating;
+    if (!seating || seating.phase === "rise") return;
+    if (seating.phase === "approach") {
+      this.leaveSeat();
+      return;
+    }
+    const check =
+      fits ??
+      ((feet: Vec3) =>
+        this.physics.capsuleFits(feet, CHARACTER.radius, CHARACTER.height, this.collider));
+    this.seating = {
+      ...seating,
+      phase: "rise",
+      t: 0,
+      duration: SITTING.standTime,
+      from: [...this.state.position],
+      to: standSpot(seating.seat, check, seating.cameFrom),
+      fromYaw: this.state.yaw,
+    };
+  }
+
   step(dt: number, cmd: MoveCommand) {
+    if (this.seating) {
+      this.seatStep(dt);
+      return;
+    }
     const s = this.state;
     // Intended velocity eases toward the input; the controller then decides what's possible.
     // Keeping intent separate from actual movement lets autostep work while pushing into a step.
@@ -147,6 +230,80 @@ export class CharacterController {
         : s.speed > 0.15
           ? LocoState.walk
           : LocoState.idle;
+  }
+
+  private seatStep(dt: number) {
+    const seating = this.seating!;
+    const s = this.state;
+    seating.t += dt;
+    const k = seating.phase === "seated" ? 1 : clamp(seating.t / seating.duration, 0, 1);
+    const eased = k * k * (3 - 2 * k);
+    const at: Vec3 = [
+      lerp(seating.from[0], seating.to[0], eased),
+      lerp(seating.from[1], seating.to[1], eased),
+      lerp(seating.from[2], seating.to[2], eased),
+    ];
+    s.velocity = [
+      (at[0] - s.position[0]) / dt,
+      (at[1] - s.position[1]) / dt,
+      (at[2] - s.position[2]) / dt,
+    ];
+    s.speed = Math.hypot(s.velocity[0], s.velocity[2]);
+    s.position = at;
+    s.grounded = true;
+    const seatYaw = seating.seat.yaw;
+    switch (seating.phase) {
+      case "approach":
+        s.yaw = lerpAngle(seating.fromYaw, seatYaw, eased);
+        s.loco = s.speed > 0.15 ? LocoState.walk : LocoState.idle;
+        s.sitAmount = 0;
+        break;
+      case "lower":
+        s.yaw = seatYaw;
+        s.loco = LocoState.sitDown;
+        s.sitAmount = eased;
+        break;
+      case "seated":
+        s.yaw = seatYaw;
+        s.loco = LocoState.seated;
+        s.sitAmount = 1;
+        break;
+      case "rise":
+        s.loco = LocoState.standUp;
+        s.sitAmount = 1 - eased;
+        break;
+    }
+    this.body.setNextKinematicTranslation(this.centerFromFeet(at));
+    if (k < 1) return;
+    if (seating.phase === "approach") {
+      this.seating = {
+        ...seating,
+        phase: "lower",
+        t: 0,
+        duration: SITTING.sitTime,
+        from: at,
+        to: seatFloorPoint(seating.seat),
+      };
+    } else if (seating.phase === "lower") {
+      this.seating = { ...seating, phase: "seated", from: at, to: at };
+    } else if (seating.phase === "rise") {
+      this.leaveSeat();
+    }
+  }
+
+  /** Back to walking where you are, physics on. */
+  private leaveSeat() {
+    const s = this.state;
+    this.seating = null;
+    this.collider.setEnabled(true);
+    const c = this.centerFromFeet(s.position);
+    this.body.setTranslation(c, true);
+    this.body.setNextKinematicTranslation(c);
+    s.velocity = [0, 0, 0];
+    s.speed = 0;
+    s.loco = LocoState.idle;
+    s.sitAmount = 0;
+    delete s.seatId;
   }
 
   dispose() {
