@@ -28,3 +28,17 @@ jobs:
           pnpm --filter @vcr/realm start &
           npx --yes wait-on@9.5.1 -t 60000 http-get://127.0.0.1:3001/health tcp:127.0.0.1:2567
           pnpm smoke
+
+  # Every push to main that passes the checks also updates the backend on Fly
+  # (Cloudflare Pages deploys the web app on its own). Needs the FLY_API_TOKEN secret.
+  deploy:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: fly-deploy
+    steps:
+      - uses: actions/checkout@v7
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
