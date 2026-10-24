@@ -25,6 +25,9 @@ export interface PoseBufferOptions {
   capacity: number;
 }
 
+/** A packet this many sequence numbers behind the last one means the sender restarted. */
+const RESTART_SEQ_GAP = 64;
+
 const DEFAULTS: PoseBufferOptions = {
   delayMs: 100,
   maxExtrapolateMs: 250,
@@ -55,7 +58,14 @@ export class RemotePoseBuffer {
   }
 
   push(pose: AvatarPose, receivedAt: number) {
-    if (this.lastSeq !== null && !isNewerSeq(pose.seq, this.lastSeq)) return; // duplicate or late
+    if (this.lastSeq !== null && !isNewerSeq(pose.seq, this.lastSeq)) {
+      // A duplicate (the same pose via LiveKit and the relay) or a late packet is a few behind. A
+      // seq far behind means their sender started over (they switched views or reloaded): take it,
+      // or we'd drop everything they send until the count caught up, minutes at 2 Hz.
+      if (seqDistance(this.lastSeq, pose.seq) <= RESTART_SEQ_GAP) return;
+      this.snapshots = [];
+      this.clockOffset = null;
+    }
     this.lastSeq = pose.seq;
     this.lastReceivedAt = receivedAt;
 
@@ -156,3 +166,6 @@ export class RemotePoseBuffer {
     return out;
   }
 }
+
+/** How far `b` is behind `a`, modulo 2^16. */
+const seqDistance = (a: number, b: number) => (a - b + 0x10000) & 0xffff;
