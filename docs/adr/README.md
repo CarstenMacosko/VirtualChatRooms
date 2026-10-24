@@ -22,3 +22,4 @@ Each record captures one decision from [PLAN.md § 2](../../PLAN.md#2-key-techni
 | [0016](0016-prototype-by-sharing-the-dev-server.md)                | Prototype by sharing the dev server; deploy later    | Accepted |
 | [0017](0017-links-bring-in-devices-and-people.md)                  | Links bring in devices and people; grid by default   | Accepted |
 | [0018](0018-textured-mesh-rooms.md)                                | Rooms can be textured meshes as well as splats       | Accepted |
+| [0019](0019-room-setup-editor-and-walkways.md)                     | Room setup editor; walkways open the collision       | Accepted |

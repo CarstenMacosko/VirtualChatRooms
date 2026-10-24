@@ -22,8 +22,6 @@ import {
   Float32BufferAttribute,
   type Group,
   LineBasicMaterial,
-  LineDashedMaterial,
-  LineLoop,
   LineSegments,
   Mesh,
   MeshBasicMaterial,
@@ -137,7 +135,8 @@ export interface SetupSceneProps {
 }
 
 type Controls = ComponentRef<typeof OrbitControls>;
-type Draft = { kind: "walkway"; min: XZ; max: XZ } | { kind: "couch"; a: Vec3; b: Vec3 };
+type Draft =
+  { kind: "walkway"; min: XZ; max: XZ } | { kind: "couch"; a: Vec3; b: Vec3; facing: XZ };
 
 export function SetupScene(props: SetupSceneProps) {
   const { scene, collision, setup, selected } = props;
@@ -208,7 +207,7 @@ export function SetupScene(props: SetupSceneProps) {
         />
       ))}
       {draft?.kind === "walkway" && <WalkwayRect walkway={{ id: "", ...draft }} draft />}
-      {draft?.kind === "couch" && <CouchDraft a={draft.a} b={draft.b} />}
+      {draft?.kind === "couch" && <CouchDraft {...draft} />}
       <Cameras
         bounds={manifest.bounds}
         topView={props.topView}
@@ -415,6 +414,16 @@ function Gestures(
       return Math.hypot(x - e.clientX, y - e.clientY);
     };
     const near = (e: PointerEvent, p: Vec3) => screenDistance(e, p) <= HANDLE_REACH;
+    /**
+     * Where new seats face: the owner, who usually looks at a couch from the room, or the
+     * middle of the room when looking straight down on it.
+     */
+    const viewpoint = (p: Vec3): XZ => {
+      const { x, z } = get().camera.position;
+      if (Math.hypot(x - p[0], z - p[2]) > 1.5) return [x, z];
+      const { min, max } = latest.current.scene.manifest.bounds;
+      return [(min[0] + max[0]) / 2, (min[2] + max[2]) / 2];
+    };
 
     /** The seat, table or walkway under the pointer (seats first: they're smallest). */
     const itemAt = (e: PointerEvent): Selection | null => {
@@ -500,7 +509,7 @@ function Gestures(
           const p = pick(e, false);
           if (!p) return;
           g.end = p;
-          setDraft({ kind: "couch", a: g.start, b: p });
+          setDraft({ kind: "couch", a: g.start, b: p, facing: viewpoint(g.start) });
           return;
         }
         case "walkway-corner": {
@@ -592,8 +601,7 @@ function Gestures(
         onEdit((s) => ({ ...s, walkways: [...s.walkways, { id, ...roundRect(g.rect) }] }));
         onSelect({ kind: "walkway", id });
       } else if (g.kind === "couch") {
-        const camera = get().camera.position;
-        const placed = seatsAlongLine(g.start, g.end, [camera.x, camera.z]);
+        const placed = seatsAlongLine(g.start, g.end, viewpoint(g.start));
         const room = SETUP_LIMITS.seats - setup.seats.length;
         if (room <= 0) return onNotice(`A room can have up to ${SETUP_LIMITS.seats} seats.`);
         const seats: Seat[] = [];
@@ -628,12 +636,10 @@ function Gestures(
         }
         const p = pick(e, true);
         if (!p) return;
-        const camera = get().camera.position;
         const seat: Seat = {
           id: nextSeatId(setup.seats),
           position: p,
-          // Facing the owner, who usually looks at a couch from the room.
-          yaw: Math.round(yawTowards([p[0], p[2]], [camera.x, camera.z]) * 1000) / 1000,
+          yaw: Math.round(yawTowards([p[0], p[2]], viewpoint(p)) * 1000) / 1000,
           height: Math.max(0.02, p[1]),
           kind: seatKind,
           source: "user",
@@ -669,6 +675,8 @@ function Gestures(
     };
 
     const onDown = (e: PointerEvent) => {
+      // Only presses on the room itself (not the toolbar over it).
+      if (e.target !== get().gl.domElement) return;
       if (e.pointerType === "mouse" && e.button !== 0) return;
       pointers.add(e.pointerId);
       if (pointers.size > 1) {
@@ -785,30 +793,72 @@ function CollisionLines({
   return <primitive object={lines} />;
 }
 
-/** A closed outline through world X/Z points at height `y`, solid or dashed. */
-function Outline(props: { points: XZ[]; y: number; color: string; dashed?: boolean }) {
-  const { points, y, color, dashed } = props;
-  const line = useMemo(() => {
-    const geometry = new BufferGeometry().setFromPoints(
-      points.map(([x, z]) => new Vector3(x, y, z)),
-    );
-    const material = dashed
-      ? new LineDashedMaterial({ color, dashSize: 0.08, gapSize: 0.06, depthTest: false })
-      : new LineBasicMaterial({ color, depthTest: false });
-    material.transparent = true;
-    const loop = new LineLoop(geometry, material);
-    if (dashed) loop.computeLineDistances();
-    loop.renderOrder = OVERLAY + 1;
-    return loop;
-  }, [points, y, color, dashed]);
-  useEffect(
-    () => () => {
-      line.geometry.dispose();
-      (line.material as LineBasicMaterial).dispose();
-    },
-    [line],
+/** Outline width, meters (GL lines are a single pixel wide, too thin to see on a busy scan). */
+const OUTLINE_WIDTH = 0.025;
+const DASH = 0.08;
+const GAP = 0.06;
+
+/**
+ * A flat ribbon through world X/Z points at height `y`, closed unless `open`, solid or dashed.
+ */
+function Outline(props: {
+  points: XZ[];
+  y: number;
+  color: string;
+  dashed?: boolean;
+  open?: boolean;
+}) {
+  const { points, y, color, dashed, open } = props;
+  const geometry = useMemo(() => {
+    const positions: number[] = [];
+    const quad = (a: XZ, b: XZ) => {
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len < 1e-6) return;
+      const nx = (-(b[1] - a[1]) / len) * (OUTLINE_WIDTH / 2);
+      const nz = ((b[0] - a[0]) / len) * (OUTLINE_WIDTH / 2);
+      const [p, q, r, t] = [
+        [a[0] + nx, y, a[1] + nz],
+        [a[0] - nx, y, a[1] - nz],
+        [b[0] - nx, y, b[1] - nz],
+        [b[0] + nx, y, b[1] + nz],
+      ];
+      positions.push(...p!, ...q!, ...r!, ...p!, ...r!, ...t!);
+    };
+    const count = open ? points.length - 1 : points.length;
+    for (let i = 0; i < count; i++) {
+      const a = points[i]!;
+      const b = points[(i + 1) % points.length]!;
+      if (!dashed) {
+        quad(a, b);
+        continue;
+      }
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      for (let d = 0; d < len; d += DASH + GAP) {
+        const t0 = d / len;
+        const t1 = Math.min(1, (d + DASH) / len);
+        quad(
+          [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0],
+          [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1],
+        );
+      }
+    }
+    const g = new BufferGeometry();
+    g.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    return g;
+  }, [points, y, dashed, open]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return (
+    <mesh geometry={geometry} renderOrder={OVERLAY + 1}>
+      <meshBasicMaterial
+        color={color}
+        transparent
+        depthTest={false}
+        depthWrite={false}
+        side={DoubleSide}
+        toneMapped={false}
+      />
+    </mesh>
   );
-  return <primitive object={line} />;
 }
 
 function WalkwayRect(props: { walkway: Walkway; selected?: boolean; draft?: boolean }) {
@@ -828,7 +878,8 @@ function WalkwayRect(props: { walkway: Walkway; selected?: boolean; draft?: bool
         <meshBasicMaterial
           color={COLORS.walkway}
           transparent
-          opacity={selected ? 0.45 : 0.28}
+          opacity={selected ? 0.45 : 0.3}
+          toneMapped={false}
           depthTest={false}
           depthWrite={false}
           side={DoubleSide}
@@ -861,17 +912,35 @@ function SeatMarker({ seat, selected }: { seat: Seat; selected: boolean }) {
     <group position={seat.position} rotation-y={seat.yaw}>
       <mesh position-y={0.03} renderOrder={OVERLAY}>
         <cylinderGeometry args={[0.17, 0.17, 0.05, 24]} />
-        <meshBasicMaterial color={color} transparent opacity={opacity} depthTest={false} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={opacity}
+          depthTest={false}
+          toneMapped={false}
+        />
       </mesh>
       {suggested && <Outline points={ring} y={0.06} color={COLORS.seat} dashed />}
       {/* Which way the sitter faces. */}
       <mesh position={[0, 0.05, 0.2]} renderOrder={OVERLAY}>
         <boxGeometry args={[0.035, 0.02, 0.2]} />
-        <meshBasicMaterial color={color} transparent opacity={opacity} depthTest={false} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={opacity}
+          depthTest={false}
+          toneMapped={false}
+        />
       </mesh>
       <mesh position={[0, 0.05, SEAT_ARROW - 0.07]} rotation-x={Math.PI / 2} renderOrder={OVERLAY}>
         <coneGeometry args={[0.07, 0.14, 16]} />
-        <meshBasicMaterial color={color} transparent opacity={opacity} depthTest={false} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={opacity}
+          depthTest={false}
+          toneMapped={false}
+        />
       </mesh>
       {/* Behind the seat, clear of its arrow and cushion. */}
       <Label text={String(seat.id)} position={[0, 0.1, -0.3]} dim={suggested && !selected} />
@@ -897,7 +966,8 @@ function TableMarker({ table, selected }: { table: Table; selected: boolean }) {
         <meshBasicMaterial
           color={COLORS.table}
           transparent
-          opacity={suggested && !selected ? 0.12 : 0.25}
+          opacity={suggested && !selected ? 0.15 : 0.35}
+          toneMapped={false}
           depthTest={false}
           depthWrite={false}
           side={DoubleSide}
@@ -931,9 +1001,8 @@ function TableMarker({ table, selected }: { table: Table; selected: boolean }) {
   );
 }
 
-function CouchDraft({ a, b }: { a: Vec3; b: Vec3 }) {
-  const camera = useThree((s) => s.camera);
-  const seats = seatsAlongLine(a, b, [camera.position.x, camera.position.z]);
+function CouchDraft({ a, b, facing }: { a: Vec3; b: Vec3; facing: XZ }) {
+  const seats = seatsAlongLine(a, b, facing);
   return (
     <>
       <Outline
@@ -944,6 +1013,7 @@ function CouchDraft({ a, b }: { a: Vec3; b: Vec3 }) {
         y={(a[1] + b[1]) / 2 + 0.03}
         color={COLORS.seat}
         dashed
+        open
       />
       {seats.map((s, i) => (
         <SeatMarker
