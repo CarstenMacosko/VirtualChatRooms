@@ -40,9 +40,13 @@ import {
 } from "@vcr/protocol";
 import { refreshSession, useAuth } from "./auth";
 
-/** Thin fetch wrapper for apps/api. Vite proxies /api to the API in development. */
+/**
+ * Thin fetch wrapper for apps/api. Vite proxies /api to the API in development. In production
+ * VITE_API_URL points straight at the backend (e.g. https://virtualchatrooms.fly.dev/api), so
+ * calls don't spend the Pages site's Functions quota; without it they go through /api.
+ */
 
-export const API_BASE = "/api";
+export const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
 export class ApiRequestError extends Error {
   constructor(

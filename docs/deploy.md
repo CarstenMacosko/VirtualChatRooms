@@ -73,8 +73,12 @@ Under **Settings → Environment variables** (production, and the same for previ
 | `SKIP_DEPENDENCY_INSTALL`    | `1` (the build command installs with pnpm itself)     |
 | `BACKEND_ORIGIN`             | `https://virtualchatrooms.fly.dev`                    |
 | `VITE_CLERK_PUBLISHABLE_KEY` | your Clerk publishable key (once you have one; see 4) |
+| `VITE_API_URL`               | `https://virtualchatrooms.fly.dev/api`                |
+| `VITE_REALM_URL`             | `https://virtualchatrooms.fly.dev/realm`              |
 
 The build image already ships pnpm, so the command only installs it when it's missing (`npm i -g` over an existing pnpm fails with `EEXIST`). Check variable names for stray spaces or tabs when pasting; a name like `VITE_CLERK_PUBLISHABLE_KEY⇥` is silently ignored by the build.
+
+With `VITE_API_URL` and `VITE_REALM_URL` set, browsers call Fly directly (it allows the Pages site through `WEB_ORIGIN`), so the forwarding functions only catch stragglers. Without them every API call, event stream and call connection is a Functions request, and the free plan's 100,000 a day runs out quickly in a call: then Pages fails open and answers `/api` with the web page.
 
 Pages deploys from the branch it watches (usually `main`), so the new setup goes live once this work is merged and pushed. `apps/web/functions/` holds the two forwarding functions. Without `BACKEND_ORIGIN` they answer "not connected yet".
 
