@@ -312,7 +312,13 @@ describe("room scans", () => {
 
   it("lets the owner set up walkways, seats and game tables", async () => {
     const before = SceneAssets.parse((await owner.call("GET", `/rooms/${ready.id}/scene`)).json());
-    expect(before.manifest).toMatchObject({ walkways: [], seats: [], tables: [] });
+    // Post-processing suggests the sample room's sofa, armchair and coffee table.
+    expect(before.manifest.walkways).toEqual([]);
+    expect(before.manifest.seats.length).toBeGreaterThan(0);
+    expect(before.manifest.tables).toHaveLength(1);
+    for (const x of [...before.manifest.seats, ...before.manifest.tables]) {
+      expect(x.source).toBe("auto");
+    }
     // Signed without a session: the owner isn't in a gathering while setting up.
     const meshUrl = before.urls[before.manifest.collision.key]!;
     expect((await app.inject({ method: "GET", url: meshUrl })).statusCode).toBe(200);

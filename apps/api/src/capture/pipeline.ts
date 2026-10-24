@@ -149,9 +149,9 @@ export async function processScan(
     transform: analysis.transform,
     bounds: analysis.bounds,
     spawnPoints: analysis.spawnPoints,
-    seats: [],
+    seats: analysis.seats,
     walkways: [],
-    tables: [],
+    tables: analysis.tables,
     zones: [],
     lighting: { ambientColor: "#ffffff", intensity: 1 },
   };

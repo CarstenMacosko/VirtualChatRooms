@@ -1,4 +1,5 @@
-import { rotationToYUp, type ScaleSource, type UpAxis } from "@vcr/protocol";
+import { rotationToYUp, type ScaleSource, type Seat, type Table, type UpAxis } from "@vcr/protocol";
+import { detectFurniture } from "./furniture";
 import type { SplatPoints } from "./splatFile";
 
 /**
@@ -17,6 +18,7 @@ import type { SplatPoints } from "./splatFile";
  *    furniture to their measured height, unscanned space to the ceiling), plus raised floor for
  *    steps. You can't walk through walls, or off the edge of the scan.
  * 5. **Spawn points** where there's the most open floor.
+ * 6. **Seats and tables** suggested from flat surfaces at sitting and table height (furniture.ts).
  *
  * Everything below is in "world" coordinates (meters, +Y up, floor at 0, centered on the floor)
  * unless it says file space.
@@ -50,6 +52,9 @@ export interface RoomAnalysis {
   bounds: { min: Vec3; max: Vec3 };
   spawnPoints: Array<{ position: Vec3; yaw: number }>;
   boxes: Box[];
+  /** Suggested seats and tables (`source: "auto"`), world space. */
+  seats: Seat[];
+  tables: Table[];
   size: { width: number; depth: number; height: number };
   /** Grid diagnostics, for tests and tuning. */
   grid: { cell: number; walkableCells: number };
@@ -501,6 +506,13 @@ export function analyzeRoom(splats: SplatPoints, opts: AnalyzeOptions = {}): Roo
   // Center the room on its walkable floor.
   const cx = grid.x0 + ((room.minI + room.maxI + 1) / 2) * grid.cell;
   const cz = grid.z0 + ((room.minJ + room.maxJ + 1) / 2) * grid.cell;
+
+  // 6. Furniture people can sit at or play on, reachable from the walkable floor.
+  const { seats, tables } = detectFurniture(world, {
+    floorArea: room.cells.length * grid.cell * grid.cell,
+    nearFloor: (x, z, radius) => nearRoom(grid, room, x, z, radius),
+    origin: [cx, cz],
+  });
   for (const b of boxes) {
     b.center[0] -= cx;
     b.center[2] -= cz;
@@ -533,6 +545,8 @@ export function analyzeRoom(splats: SplatPoints, opts: AnalyzeOptions = {}): Roo
     bounds,
     spawnPoints,
     boxes,
+    seats,
+    tables,
     size: {
       width: (room.maxI - room.minI + 1) * grid.cell,
       depth: (room.maxJ - room.minJ + 1) * grid.cell,
@@ -846,6 +860,20 @@ function pickSpawns(grid: Grid, room: Component): Array<{ position: Vec3; yaw: n
       yaw,
     };
   });
+}
+
+/** Whether any of the room's walkable cells lies within `radius` of (x, z). */
+function nearRoom(grid: Grid, room: Component, x: number, z: number, radius: number): boolean {
+  const { nx, nz, cell, x0, z0 } = grid;
+  const r = Math.ceil(radius / cell);
+  const ci = Math.floor((x - x0) / cell);
+  const cj = Math.floor((z - z0) / cell);
+  for (let j = Math.max(0, cj - r); j <= Math.min(nz - 1, cj + r); j++) {
+    for (let i = Math.max(0, ci - r); i <= Math.min(nx - 1, ci + r); i++) {
+      if (room.member[j * nx + i] && Math.hypot(i - ci, j - cj) <= r) return true;
+    }
+  }
+  return false;
 }
 
 /** Box corners → triangles (12 per box), with positions mapped through `toFile`. */
