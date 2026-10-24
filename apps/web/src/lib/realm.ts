@@ -253,6 +253,8 @@ export function useRealmSession(join: () => Promise<JoinSessionResponse>, sessio
         }),
       /** Gets up: frees your seat. */
       stand: () => send(RealmMessage.stand, {}),
+      /** Listen in on the group `target` is in; null stops. */
+      listenTo: (target: string | null) => send(RealmMessage.listenTo, { target }),
       /** Host, after the API moved the session: everyone (you included) loads the new room. */
       announceRoomChange: () => send(RealmMessage.roomChanged, {}),
       /** Try again after a "locked" refusal. */

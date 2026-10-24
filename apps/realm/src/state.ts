@@ -15,7 +15,8 @@ export const Participant = schema(
     /** AvatarRecipe JSON; "" until they make one. */
     avatar: t.string().default(""),
     handRaised: t.boolean().default(false),
-    // Added in later phases: groupId (side conversations).
+    /** Realm session id of someone whose group they're listening in on; "" for none. */
+    listeningTo: t.string().default(""),
   },
   "Participant",
 );

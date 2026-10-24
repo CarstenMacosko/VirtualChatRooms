@@ -1,5 +1,6 @@
 import {
   Box,
+  Ear,
   EllipsisVertical,
   Hand,
   House as Home,
@@ -17,12 +18,19 @@ import {
   SwitchCamera,
   UserPlus,
   Users,
+  UsersRound,
   Video,
   VideoOff,
   Volume2,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { PoseSender, SAMPLE_ROOM_LAYOUT, scannedRoomLayout, spawnPointFor } from "@vcr/engine";
+import {
+  PoseSender,
+  SAMPLE_ROOM_LAYOUT,
+  scannedRoomLayout,
+  spawnPointFor,
+  type Vec3,
+} from "@vcr/engine";
 import {
   EmoteId,
   type JoinSessionResponse,
@@ -31,15 +39,18 @@ import {
   type SceneAssets,
 } from "@vcr/protocol";
 import { api, ApiRequestError } from "../lib/api";
+import type { Device } from "../media/access";
 import { readDeviceProfile } from "../lib/device";
 import { useNow } from "../lib/hooks";
 import { useLive } from "../lib/live";
 import { type RealmStatus, useRealmSession } from "../lib/realm";
 import { SpatialAudio } from "../media/SpatialAudio";
 import { useFaceTracking } from "../media/useFaceTracking";
+import { type Group, useGroups } from "../media/useGroups";
 import { type MediaState, useMedia } from "../media/useMedia";
 import type { Autopilot } from "../world/World";
 import { Filmstrip, VideoStage } from "./CallTiles";
+import { AccessHelp, DeviceTrouble } from "./DeviceAccess";
 import { EMOTE_GLYPHS } from "./emotes";
 import { InvitePanel } from "./InvitePanel";
 import { DeviceSelect, type JoinChoice, PreJoin, rememberedDevices, useDevices } from "./PreJoin";
@@ -143,6 +154,9 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   const [panel, setPanel] = useState<PanelTab | null>(null);
   const [dialog, setDialog] = useState<"invite" | "leave" | "settings" | "room" | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
+  const [fixing, setFixing] = useState<Device | null>(null);
+  // In the grid your avatar stands still; joining a group from the map moves it here.
+  const [gridSpot, setGridSpot] = useState<{ position: Vec3; yaw: number } | null>(null);
   const autopilotRef = useRef<Autopilot>({ targetId: null });
   // Mirroring your face follows your camera until you choose otherwise.
   const [faceChoice, setFaceChoice] = useState<boolean | null>(null);
@@ -163,7 +177,12 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   const [sceneRoom, setSceneRoom] = useState<{ id: string; name: string } | null>(null);
   const joined = realm.joinInfo;
   if (joined && joined.room.id !== sceneRoom?.id) {
-    if (sceneRoom) setRoomNotice({ name: joined.room.name, at: now });
+    if (sceneRoom) {
+      setRoomNotice({ name: joined.room.name, at: now });
+      // Everyone starts over in the new room.
+      realm.poseHub.forgetSelf();
+      setGridSpot(null);
+    }
     setSceneRoom({ id: joined.room.id, name: joined.room.name });
     setScene(joined.scene);
   }
@@ -173,17 +192,42 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   useEffect(() => {
     if (view === "room" || !selfUserId || scene === undefined) return;
     const layout = scene ? scannedRoomLayout(scene.manifest) : SAMPLE_ROOM_LAYOUT;
-    const spot = spawnPointFor(selfUserId, layout);
+    const spawn = spawnPointFor(selfUserId, layout);
+    // A group you joined from the map, else wherever you were standing (so switching to the
+    // grid keeps your group), else your spawn point.
+    const spot = gridSpot ??
+      realm.poseHub.selfPose() ?? {
+        position: [spawn.position[0], spawn.position[1] - 0.05, spawn.position[2]] as Vec3,
+        yaw: spawn.yaw,
+      };
     const sender = new PoseSender((bytes) => realm.poseHub.send(bytes));
     const timer = setInterval(() => {
       sender.update(performance.now(), {
-        position: [spot.position[0], spot.position[1] - 0.05, spot.position[2]],
+        position: spot.position,
         yaw: spot.yaw,
         loco: LocoState.idle,
       });
     }, 250);
     return () => clearInterval(timer);
-  }, [view, selfUserId, scene, realm.poseHub]);
+  }, [view, selfUserId, scene, realm.poseHub, gridSpot]);
+
+  const groups = useGroups(realm, audio, media.setFocus);
+  const myGroup = groups.groups.find((g) => g.mine);
+  const listeningGroup = groups.groups.find((g) => g.listening);
+  const nameOf = (id: string) => realm.participants.find((p) => p.id === id)?.name ?? "Someone";
+  const listenTo = (group: Group | null) => realm.listenTo(group?.members[0] ?? null);
+  const joinGroup = (group: Group) => {
+    realm.listenTo(null);
+    if (view === "room") {
+      // Walk over; close the panel so you see yourself going.
+      autopilotRef.current.targetId = group.members[0] ?? null;
+      setPanel(null);
+      return;
+    }
+    const layout = scene ? scannedRoomLayout(scene.manifest) : SAMPLE_ROOM_LAYOUT;
+    const spot = groups.spotToJoin(group.id, layout.bounds);
+    if (spot) setGridSpot(spot);
+  };
 
   // Voices are placed in the room view, and straight ahead in the grid.
   useEffect(() => audio.setSpatial(view === "room"), [audio, view]);
@@ -192,6 +236,8 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   }, [audio, props.choice.speaker]);
   const changeView = (next: "grid" | "room") => {
     setView(next);
+    // The room view walks from wherever the grid had you standing.
+    if (next === "room") setGridSpot(null);
     try {
       localStorage.setItem(VIEW_KEY, next);
     } catch {
@@ -203,7 +249,14 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   // builds when that check asks for it.
   useEffect(() => {
     if (!import.meta.env.DEV && !debugHooks()) return;
-    (window as { vcrDebug?: unknown }).vcrDebug = { media, audio, realm };
+    (window as { vcrDebug?: unknown }).vcrDebug = {
+      media,
+      audio,
+      realm,
+      groups,
+      /** Puts your avatar somewhere (video grid only), like walking there. */
+      standAt: (x: number, z: number) => setGridSpot({ position: [x, 0, z], yaw: 0 }),
+    };
   });
 
   // Unread chat while the chat panel is closed.
@@ -334,6 +387,16 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
               <Lock size={14} /> Locked
             </span>
           )}
+          {groups.active && myGroup && myGroup.listeners.length > 0 && (
+            <button className="badge listen-badge" onClick={() => setPanel("groups")}>
+              <Ear size={14} /> {myGroup.listeners.map(nameOf).join(", ")} listening
+            </button>
+          )}
+          {listeningGroup && (
+            <button className="badge listen-badge" onClick={() => listenTo(null)}>
+              <Ear size={14} /> Listening in · Stop
+            </button>
+          )}
           {media.status !== "connected" && media.status !== "off" && (
             <span className="badge warn">
               {media.status === "failed" ? "No audio/video" : "Connecting audio…"}
@@ -366,6 +429,11 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
             {media.error}
           </p>
         )}
+        {media.status === "connected" && (
+          <div className="call-trouble">
+            <DeviceTrouble trouble={media.trouble} onFix={setFixing} />
+          </div>
+        )}
       </div>
 
       {panel && (
@@ -379,6 +447,10 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
           onPin={pin}
           canInvite={canInvite}
           onInvite={() => setDialog("invite")}
+          groups={groups}
+          speaking={media.speaking}
+          onListen={listenTo}
+          onJoinGroup={joinGroup}
         />
       )}
 
@@ -407,7 +479,26 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
         onPanel={(tab) => setPanel(panel === tab ? null : tab)}
         unread={unread}
         onLeave={() => (isOwner ? setDialog("leave") : props.onExit())}
+        onFix={setFixing}
       />
+
+      {fixing && (
+        <AccessHelp
+          device={fixing}
+          access={media.trouble[fixing] ?? "blocked"}
+          onClose={() => setFixing(null)}
+          onRetry={() => {
+            setFixing(null);
+            if (fixing === "mic") media.setMic(true);
+            else media.setCamera(true);
+          }}
+          onSkip={() => {
+            setFixing(null);
+            if (fixing === "mic") media.setMic(false);
+            else media.setCamera(false);
+          }}
+        />
+      )}
 
       {dialog === "invite" && (
         <InvitePanel sessionId={props.sessionId} onClose={() => setDialog(null)} />
@@ -526,6 +617,8 @@ function ControlBar(props: {
   onPanel(tab: PanelTab): void;
   unread: number;
   onLeave(): void;
+  /** Help for a microphone or camera that couldn't turn on. */
+  onFix(device: Device): void;
 }) {
   const { media } = props;
   const [popup, setPopup] = useState<"emotes" | "more" | null>(null);
@@ -550,24 +643,28 @@ function ControlBar(props: {
 
       <div className="bar-center">
         <button
-          className={`round${media.micOn ? "" : " off"}`}
-          onClick={() => media.setMic(!media.micOn)}
+          className={`round${media.micOn ? "" : " off"}${media.trouble.mic ? " trouble" : ""}`}
+          onClick={() => (media.trouble.mic ? props.onFix("mic") : media.setMic(!media.micOn))}
           disabled={!mediaReady}
           aria-pressed={!media.micOn}
           aria-label={media.micOn ? "Turn off microphone" : "Turn on microphone"}
           title={media.micOn ? "Mute (Ctrl+D)" : "Unmute (Ctrl+D)"}
         >
           {media.micOn ? <Mic size={22} /> : <MicOff size={22} />}
+          {media.trouble.mic && <span className="trouble-dot">!</span>}
         </button>
         <button
-          className={`round${media.cameraOn ? "" : " off"}`}
-          onClick={() => media.setCamera(!media.cameraOn)}
+          className={`round${media.cameraOn ? "" : " off"}${media.trouble.camera ? " trouble" : ""}`}
+          onClick={() =>
+            media.trouble.camera ? props.onFix("camera") : media.setCamera(!media.cameraOn)
+          }
           disabled={!mediaReady}
           aria-pressed={!media.cameraOn}
           aria-label={media.cameraOn ? "Turn off camera" : "Turn on camera"}
           title={media.cameraOn ? "Stop video (Ctrl+E)" : "Start video (Ctrl+E)"}
         >
           {media.cameraOn ? <Video size={22} /> : <VideoOff size={22} />}
+          {media.trouble.camera && <span className="trouble-dot">!</span>}
         </button>
         {touch && media.cameraOn && (
           <button className="round" onClick={media.flipCamera} aria-label="Switch camera">
@@ -657,6 +754,9 @@ function ControlBar(props: {
                 onClick={() => props.onPanel("people")}
               >
                 <Users size={18} /> People ({props.peopleCount})
+              </button>
+              <button role="menuitem" onClick={() => props.onPanel("groups")}>
+                <UsersRound size={18} /> Groups
               </button>
               <button role="menuitem" className="narrow-only" onClick={() => props.onPanel("chat")}>
                 <MessageSquare size={18} /> Chat{props.unread > 0 ? ` (${props.unread} new)` : ""}

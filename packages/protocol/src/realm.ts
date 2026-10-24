@@ -37,6 +37,11 @@ export interface ParticipantView {
   onMedia: boolean;
   /** Raised their hand to speak. */
   handRaised: boolean;
+  /**
+   * Listening in on another group's conversation: the realm session id of someone in that group,
+   * or "" when not listening in. Groups themselves come from where avatars stand (clusters.ts).
+   */
+  listeningTo: string;
   /** Their AvatarRecipe as JSON, or "" before they've made one (see `parseRecipe`). */
   avatar: string;
 }
@@ -74,6 +79,8 @@ export const RealmMessage = {
   chat: "chat",
   /** Client → server: raise or lower your hand. */
   raiseHand: "raiseHand",
+  /** Client → server: listen in on the group someone is in (null stops). */
+  listenTo: "listenTo",
   /**
    * The host moved the gathering to another room (after the API agreed). Host → server; server →
    * everyone: rejoin to get the new room's assets.
@@ -115,6 +122,7 @@ export const ClientMessages = {
   [RealmMessage.endSession]: z.object({}),
   [RealmMessage.chat]: z.object({ text: z.string().trim().min(1).max(MAX_CHAT_LENGTH) }),
   [RealmMessage.raiseHand]: z.object({ raised: z.boolean() }),
+  [RealmMessage.listenTo]: z.object({ target: z.string().nullable() }),
   [RealmMessage.roomChanged]: z.object({}),
   // The realm doesn't know the room's seats, only that ids fit the manifest's range.
   [RealmMessage.sit]: z.object({ seatId: z.number().int().min(0).max(0xffff) }),

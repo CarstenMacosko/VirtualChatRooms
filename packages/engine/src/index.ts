@@ -11,6 +11,7 @@ export * from "./locomotion/autopilot";
 export * from "./locomotion/physics";
 export * from "./locomotion/sitting";
 export * from "./math";
+export * from "./media/clusters";
 export * from "./media/interest";
 export * from "./net/PoseBuffer";
 export * from "./net/PoseHub";

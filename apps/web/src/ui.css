@@ -838,6 +838,8 @@ button.round.small.active {
   place-content: center;
   justify-items: center;
   gap: 12px;
+  /* Clear of the mic and camera buttons along the bottom. */
+  padding-bottom: 72px;
 }
 .preview-name {
   position: absolute;
@@ -915,6 +917,136 @@ button.round.small.active {
   min-width: 220px;
 }
 
+/* Asking for the camera and microphone, and help when one isn't working. Big tap targets:
+   most people meet these on a phone. */
+.prejoin .preview.asking {
+  aspect-ratio: auto;
+  min-height: 300px;
+  display: grid;
+  place-items: center;
+  background: #1a2f54;
+}
+.preview-ask {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  max-width: 420px;
+  padding: 28px 20px;
+  text-align: center;
+}
+.preview-ask h2 {
+  margin: 0;
+  font-size: 22px;
+  color: #fff;
+}
+.preview-ask p {
+  margin: 0;
+  color: #c9d6ee;
+  line-height: 1.45;
+}
+.ask-icons {
+  display: flex;
+  gap: 14px;
+}
+.ask-icons svg {
+  box-sizing: content-box;
+  padding: 14px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.14);
+  color: #fff;
+}
+.preview-ask button.big {
+  width: 100%;
+  max-width: 340px;
+}
+button.round.trouble,
+.preview-controls button.round.trouble {
+  background: #f5a524;
+  border-color: transparent;
+  color: #241800;
+}
+button.round.trouble:hover:not(:disabled) {
+  background: #e8961a;
+}
+.trouble-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #d93d3d;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+.device-trouble {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+.device-trouble button.trouble-row {
+  justify-content: flex-start;
+  width: 100%;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid #f0d491;
+  background: #fff4dc;
+  color: #6d4c00;
+  font-weight: 600;
+  text-align: left;
+}
+.trouble-row > span:first-of-type {
+  flex: 1;
+}
+.trouble-fix {
+  flex: none;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #6d4c00;
+  color: #fff;
+  font-size: 14px;
+}
+.call-trouble {
+  position: absolute;
+  top: 104px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(460px, calc(100% - 32px));
+  z-index: 7;
+}
+.access-help {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding-top: 4px;
+}
+.access-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.access-help ol {
+  justify-self: stretch;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 24px;
+  font-size: 17px;
+  line-height: 1.45;
+  text-align: left;
+}
+.access-help button.big {
+  width: 100%;
+}
+
 /* --- The call --------------------------------------------------------------------------- */
 
 .call {
@@ -971,6 +1103,14 @@ button.round.small.active {
 .badge.warn {
   background: #6d4c00;
   color: #ffe6a8;
+}
+button.badge.listen-badge {
+  pointer-events: auto;
+  border: none;
+  color: #fff;
+  background: rgb(47 91 234 / 0.85);
+  font-weight: 600;
+  cursor: pointer;
 }
 .call .world-loading {
   color: var(--c-muted);
@@ -1422,6 +1562,109 @@ video.mirror {
   padding: 12px 14px 14px;
   overflow-y: auto;
 }
+
+/* Groups: one circle while everyone's together, smaller circles as people drift apart. */
+.groups-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.group-map {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px 14px;
+  padding: 6px 0;
+}
+.group-circle {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+.group-circle .ring {
+  position: relative;
+  border-radius: 50%;
+  border: 2px dashed var(--line);
+  background: var(--panel-2);
+  transition:
+    width 0.4s ease,
+    height 0.4s ease;
+}
+.group-circle.mine .ring {
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+}
+.group-circle.listening .ring {
+  border: 2px solid #12a150;
+  background: #e3f6ea;
+}
+.group-circle .group-member {
+  position: absolute;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff;
+  transition:
+    left 0.4s ease,
+    top 0.4s ease,
+    box-shadow 0.15s;
+}
+.group-circle .group-member.speaking {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 5px #34d399;
+}
+.group-circle h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 15px;
+}
+.group-circle .listeners {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  color: #12a150;
+}
+.group-actions {
+  display: flex;
+  gap: 8px;
+}
+.side-panel .group-actions button {
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 600;
+  background: var(--panel-2);
+  color: var(--text);
+}
+.side-panel .group-actions button.on {
+  background: #e3f6ea;
+  color: #0c6b35;
+}
+.side-panel .group-actions button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+.background-level {
+  display: grid;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  font-weight: 600;
+}
+.background-level > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.background-level input {
+  width: 100%;
+}
 .people {
   list-style: none;
   margin: 0;
@@ -1620,6 +1863,10 @@ video.mirror {
 }
 
 @media (max-width: 640px) {
+  /* Room to see yourself and reach the buttons on a phone. */
+  .prejoin .preview {
+    aspect-ratio: 1 / 1;
+  }
   .hide-narrow,
   .bar-left,
   .wide-only {

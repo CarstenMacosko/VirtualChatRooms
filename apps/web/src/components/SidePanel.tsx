@@ -18,6 +18,8 @@ import {
 } from "@vcr/protocol";
 import type { RealmSession } from "../lib/realm";
 import type { SpatialAudio } from "../media/SpatialAudio";
+import type { Group, Groups } from "../media/useGroups";
+import { GroupsMap } from "./GroupsMap";
 import { Avatar } from "./ui";
 
 const ROLE_LABEL: Partial<Record<ParticipantRole, string>> = {
@@ -26,9 +28,11 @@ const ROLE_LABEL: Partial<Record<ParticipantRole, string>> = {
   guest: "Guest",
 };
 
-export type PanelTab = "people" | "chat";
+export type PanelTab = "people" | "groups" | "chat";
 
-/** The call's side panel, like Meet's: who's here (with host controls) and chat. */
+const TAB_LABEL: Record<PanelTab, string> = { people: "People", groups: "Groups", chat: "Chat" };
+
+/** The call's side panel, like Meet's: who's here (with host controls), groups and chat. */
 export function SidePanel(props: {
   tab: PanelTab;
   onTab(tab: PanelTab): void;
@@ -39,9 +43,13 @@ export function SidePanel(props: {
   onPin(id: string | null): void;
   canInvite: boolean;
   onInvite(): void;
+  groups: Groups;
+  speaking: ReadonlySet<string>;
+  onListen(group: Group | null): void;
+  onJoinGroup(group: Group): void;
 }) {
   return (
-    <aside className="side-panel" aria-label={props.tab === "people" ? "People" : "Chat"}>
+    <aside className="side-panel" aria-label={TAB_LABEL[props.tab]}>
       <header>
         <div className="tabs" role="tablist">
           <button
@@ -51,6 +59,14 @@ export function SidePanel(props: {
             onClick={() => props.onTab("people")}
           >
             People ({props.realm.participants.length})
+          </button>
+          <button
+            role="tab"
+            aria-selected={props.tab === "groups"}
+            className={props.tab === "groups" ? "on" : ""}
+            onClick={() => props.onTab("groups")}
+          >
+            Groups
           </button>
           <button
             role="tab"
@@ -65,7 +81,21 @@ export function SidePanel(props: {
           <X size={20} />
         </button>
       </header>
-      {props.tab === "people" ? <People {...props} /> : <Chat realm={props.realm} />}
+      {props.tab === "people" ? (
+        <People {...props} />
+      ) : props.tab === "groups" ? (
+        <GroupsMap
+          groups={props.groups}
+          participants={props.realm.participants}
+          selfId={props.realm.selfId}
+          speaking={props.speaking}
+          audio={props.audio}
+          onListen={props.onListen}
+          onJoin={props.onJoinGroup}
+        />
+      ) : (
+        <Chat realm={props.realm} />
+      )}
     </aside>
   );
 }
