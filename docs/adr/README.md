@@ -24,3 +24,4 @@ Each record captures one decision from [PLAN.md § 2](../../PLAN.md#2-key-techni
 | [0018](0018-textured-mesh-rooms.md)                                | Rooms can be textured meshes as well as splats            | Accepted |
 | [0019](0019-room-setup-editor-and-walkways.md)                     | Room setup editor; walkways open the collision            | Accepted |
 | [0020](0020-sitting.md)                                            | Sitting: detected seats, realm claims, scripted sit/stand | Accepted |
+| [0021](0021-table-games-jigsaw.md)                                 | Table games, starting with a shared jigsaw                | Accepted |
