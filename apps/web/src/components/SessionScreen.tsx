@@ -22,13 +22,7 @@ import {
   Volume2,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import {
-  PoseSender,
-  SAMPLE_ROOM_LAYOUT,
-  scannedRoomLayout,
-  spawnPointFor,
-  type Vec3,
-} from "@vcr/engine";
+import { PoseSender, SAMPLE_ROOM_LAYOUT, scannedRoomLayout, spawnPointFor } from "@vcr/engine";
 import {
   EmoteId,
   type JoinSessionResponse,
