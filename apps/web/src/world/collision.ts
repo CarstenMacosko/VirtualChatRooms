@@ -7,6 +7,7 @@ import {
   collisionBoxes,
   collisionToWorld,
   dropWalkwayTriangles,
+  passableWalkways,
   type PhysicsWorld,
 } from "@vcr/engine";
 import type { SceneAssets, Walkway } from "@vcr/protocol";
@@ -46,7 +47,7 @@ export async function loadRoomCollision(scene: SceneAssets): Promise<RoomCollisi
 }
 
 /**
- * Adds the room's colliders with walkways opened up: clipped boxes when the mesh is boxes,
+ * Adds the room's colliders with walkways opened up wide enough to walk through: clipped boxes when the mesh is boxes,
  * otherwise the triangles, minus those inside a walkway.
  */
 export function addRoomColliders(
@@ -54,14 +55,15 @@ export function addRoomColliders(
   collision: RoomCollision,
   walkways: readonly Walkway[],
 ) {
+  const open = passableWalkways(walkways);
   if (collision.boxes) {
-    for (const box of clipToWalkways(collision.boxes, walkways)) {
+    for (const box of clipToWalkways(collision.boxes, open)) {
       physics.addBox(aabbToCollider(box));
     }
     return;
   }
   for (const m of collision.meshes) {
-    const indices = dropWalkwayTriangles(m.vertices, m.indices, walkways);
+    const indices = dropWalkwayTriangles(m.vertices, m.indices, open);
     if (indices.length) physics.addTrimesh(m.vertices, indices);
   }
 }

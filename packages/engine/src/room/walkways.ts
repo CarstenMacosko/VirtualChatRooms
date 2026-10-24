@@ -1,6 +1,7 @@
 import type { Walkway } from "@vcr/protocol";
 import type { Vec3 } from "../math";
 import type { BoxCollider } from "../locomotion/physics";
+import { CHARACTER } from "../locomotion/CharacterController";
 
 /**
  * Walkways (room setup): floor rectangles the owner keeps walkable through scan clutter. Inside
@@ -62,6 +63,20 @@ export function clipToWalkways(
   let out = boxes.filter(solid);
   for (const w of walkways) out = out.flatMap((b) => subtract(b, w, cut));
   return out;
+}
+
+/**
+ * Walkways widened by the character's radius (plus a hair): with those cut out, nothing touches
+ * a capsule whose center is inside the walkway, so you pass through freely however tight the gap
+ * is, your body overlapping the furniture beside it.
+ */
+export function passableWalkways(walkways: readonly Walkway[]): Walkway[] {
+  const r = CHARACTER.radius + 0.02;
+  return walkways.map((w) => ({
+    ...w,
+    min: [w.min[0] - r, w.min[1] - r],
+    max: [w.max[0] + r, w.max[1] + r],
+  }));
 }
 
 /** Whether a world point is inside a walkway's prism (above the cut). */
