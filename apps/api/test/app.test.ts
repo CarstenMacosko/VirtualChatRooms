@@ -838,5 +838,11 @@ describe("sharing the dev server (pnpm share)", () => {
       headers: { origin: "https://evil.example", "access-control-request-method": "POST" },
     });
     expect(other.headers["access-control-allow-origin"]).toBeUndefined();
+    expect(other.statusCode).toBe(403);
+    const script = await app.inject({
+      method: "POST",
+      url: "/realm/matchmake/joinOrCreate/session",
+    });
+    expect(script.statusCode).not.toBe(403);
   });
 });
