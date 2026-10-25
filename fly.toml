@@ -1,6 +1,6 @@
 # Fly.io: one always-on machine (calls need the realm and live events running). See docs/deploy.md.
 # Change `app` to the name you create with `fly apps create`; WEB_ORIGIN lists every address the
-# web app is opened at (your Cloudflare Pages site and this Fly address).
+# web app is opened at (your Cloudflare Pages site, its preview builds and this Fly address).
 app = "virtualchatrooms"
 primary_region = "iad"
 # The API (embedded Postgres) settles near 700 MB and the realm near 150 MB; creating the database on a
@@ -15,7 +15,7 @@ swap_size_mb = 1024
   VITE_CLERK_PUBLISHABLE_KEY = "pk_test_Y2FyZWZ1bC1zaGVlcGRvZy01ODQ4LmNsZXJrLmFjY291bnRzLmRldiQ"
 
 [env]
-  WEB_ORIGIN = "https://virtualchatrooms.pages.dev,https://virtualchatrooms.fly.dev"
+  WEB_ORIGIN = "https://virtualchatrooms.pages.dev,https://*.virtualchatrooms.pages.dev,https://virtualchatrooms.fly.dev"
 
 [http_service]
   internal_port = 8080

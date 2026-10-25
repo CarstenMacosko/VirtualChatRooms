@@ -27,7 +27,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp } from "../src/app";
-import { isAllowedParty } from "../src/identity";
+import { isAllowedParty, isWebOrigin } from "../src/identity";
 import { createDatabase, type DatabaseHandle } from "../src/db/client";
 import { parseEnv } from "../src/env";
 import { FsStorage } from "../src/storage";
@@ -807,6 +807,21 @@ describe("sharing the dev server (pnpm share)", () => {
     expect(isAllowedParty("https://evil.example", dev)).toBe(false);
     expect(isAllowedParty("https://lucky-fox.trycloudflare.com", prod)).toBe(false);
     expect(isAllowedParty("https://app.example", prod)).toBe(true);
+  });
+
+  it("accepts any one subdomain where WEB_ORIGIN says *. (Pages preview builds)", () => {
+    const env = { WEB_ORIGIN: "https://vcr.pages.dev, https://*.vcr.pages.dev" };
+    expect(isWebOrigin("https://vcr.pages.dev", env)).toBe(true);
+    expect(isWebOrigin("https://f9a632ec.vcr.pages.dev", env)).toBe(true);
+    expect(isWebOrigin("https://deploy-realm-cors.vcr.pages.dev", env)).toBe(true);
+    expect(isWebOrigin("https://a.b.vcr.pages.dev", env)).toBe(false);
+    expect(isWebOrigin("https://evilvcr.pages.dev", env)).toBe(false);
+    expect(isWebOrigin("https://.vcr.pages.dev", env)).toBe(false);
+    expect(isWebOrigin("http://f9a632ec.vcr.pages.dev", env)).toBe(false);
+    expect(isWebOrigin("https://f9a632ec.vcr.pages.dev.evil.example", env)).toBe(false);
+    expect(
+      isAllowedParty("https://f9a632ec.vcr.pages.dev", { ...env, NODE_ENV: "production" }),
+    ).toBe(true);
   });
 
   it("lets the web origin make credentialed requests (the realm's client always does)", async () => {

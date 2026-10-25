@@ -11,6 +11,8 @@ export const viewingShared = () => window.location.hostname.endsWith(".trycloudf
 export function useShareUrl(pollMs = 10_000): string | null {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
+    // Production builds have no `pnpm share` (and the API no /dev/share route): don't poll a 404.
+    if (!import.meta.env.DEV) return;
     let active = true;
     const check = () =>
       api
