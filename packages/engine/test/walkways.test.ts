@@ -8,7 +8,10 @@ import {
   collisionBoxes,
   dropWalkwayTriangles,
   inWalkway,
+  passableWalkways,
   WALKWAY_CUT_HEIGHT,
+  WALKWAY_EDGE_THICKNESS,
+  walkwayColliders,
 } from "../src/room/walkways";
 
 const walkway = (min: [number, number], max: [number, number]): Walkway => ({
@@ -103,6 +106,54 @@ describe("clipToWalkways", () => {
       center: [1, 0.5, 2],
       halfExtents: [1, 0.5, 2],
     });
+  });
+});
+
+describe("walkwayColliders", () => {
+  // The room's edge: a wall two grid cells (16 cm) thick, beyond it nothing.
+  const wall: Aabb = { min: [2, 0, -4], max: [2.16, 2.5, 4] };
+  const along = walkway([0, -1], [2.05, 1]);
+  const [open] = passableWalkways([along]);
+
+  it("moves a wall the opening cut through to the walkway's edge", () => {
+    const out = walkwayColliders([wall], [along]);
+    const edge = out.filter((b) => b.min[0] === open!.max[0]);
+    expect(edge).toEqual([
+      {
+        min: [open!.max[0], WALKWAY_CUT_HEIGHT, open!.min[1]],
+        max: [open!.max[0] + WALKWAY_EDGE_THICKNESS, 2.5, open!.max[1]],
+      },
+    ]);
+    // The wall either side of the walkway stays where it was.
+    expect(blocked(out, [2.08, 1, -3])).toBe(true);
+    expect(blocked(out, [2.08, 1, 3])).toBe(true);
+    expect(blocked(out, [2.08, 1, 0])).toBe(false);
+  });
+
+  it("adds nothing where a box's own remaining piece already stands at the edge", () => {
+    const thick: Aabb = { min: [2, 0, -4], max: [3, 2.5, 4] };
+    expect(walkwayColliders([thick], [along])).toEqual(clipToWalkways([thick], [open!]));
+  });
+
+  it("adds nothing for clutter inside the walkway", () => {
+    const noise: Aabb = { min: [0.5, 0, -0.2], max: [0.8, 0.6, 0.2] };
+    expect(walkwayColliders([noise], [along])).toEqual([
+      { min: [0.5, 0, -0.2], max: [0.8, WALKWAY_CUT_HEIGHT, 0.2] },
+    ]);
+  });
+
+  it("keeps edge walls out of other walkways, so they surround the whole shape", () => {
+    // Two overlapping walkways along the wall, then turning away from it.
+    const ways = [walkway([0, -1], [2.05, 0.5]), walkway([-1, 0], [1.9, 3])];
+    const out = walkwayColliders([wall], ways);
+    for (const w of passableWalkways(ways)) {
+      for (const b of out) {
+        if (b.max[1] <= WALKWAY_CUT_HEIGHT) continue;
+        const inside =
+          b.max[0] > w.min[0] && b.min[0] < w.max[0] && b.max[2] > w.min[1] && b.min[2] < w.max[1];
+        expect(inside).toBe(false);
+      }
+    }
   });
 });
 
