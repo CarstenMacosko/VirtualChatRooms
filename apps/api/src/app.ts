@@ -63,6 +63,10 @@ export async function buildApp(ctx: AppContext) {
   await app.register(cors, {
     origin: webOrigins(ctx.env),
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
+    // The realm's client (Colyseus) always sends credentials, and this answers the preflight for
+    // /realm too, so a web app on another origin (Cloudflare Pages) can't join a call without it.
+    // Sign-in is a bearer token, never a cookie, so this lets no ambient credentials in.
+    credentials: true,
   });
 
   const live = new LiveHub();

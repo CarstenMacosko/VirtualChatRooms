@@ -1,12 +1,12 @@
 # Deploying: Fly.io backend, Cloudflare Pages front door
 
-The app runs as **one always-on Fly.io machine** that holds the API, the realm (call server), the database and uploaded room scans. Your **Cloudflare Pages site is the address people use**. It serves the web app and forwards `/api` and `/realm` to Fly, so the browser only ever talks to one origin. Voice and video go through **LiveKit Cloud**.
+The app runs as **one always-on Fly.io machine** that holds the API, the realm (call server), the database and uploaded room scans. Your **Cloudflare Pages site is the address people use**. It serves the web app, and the browser then talks to Fly directly for `/api` and `/realm` (Fly allows the Pages site through `WEB_ORIGIN`). Voice and video go through **LiveKit Cloud**.
 
 ```
-phone / laptop ──► https://<project>.pages.dev  (Cloudflare Pages: the web app)
-                     ├─ /api/*   ─┐  Pages Functions forward these
-                     └─ /realm/* ─┴─► https://<app>.fly.dev  (API + realm + database + scans)
-                media ─────────────► LiveKit Cloud
+phone / laptop ──► https://<project>.pages.dev  (Cloudflare Pages: the web app's files)
+       │
+       ├─ /api/*, /realm/* ──► https://<app>.fly.dev  (API + realm + database + scans)
+       └─ media ────────────► LiveKit Cloud
 ```
 
 The Fly address works on its own too, since it serves the same web app.
@@ -108,6 +108,20 @@ Open `https://<project>.pages.dev` plus the `path` it returns (for example `/lin
 3. Put the publishable key in Pages' `VITE_CLERK_PUBLISHABLE_KEY` and redeploy Pages. If you also use the Fly address directly, run `fly deploy --build-arg VITE_CLERK_PUBLISHABLE_KEY=pk_live_…`.
 
 With Clerk on, invite links ask people to sign in with Clerk first, then connect them to you. Accounts made earlier through links keep working.
+
+## 5. Moving to your own domain
+
+Say people should open `https://example.com`. Nothing in the code names `pages.dev`, so it's all settings:
+
+1. **Pages:** in the Pages project, **Custom domains → Set up a domain**, enter `example.com`. If the domain's DNS is on Cloudflare it wires itself up; otherwise add the CNAME it shows.
+2. **Fly:** add the new address to `WEB_ORIGIN` in `fly.toml` (keep the old ones while people switch over), then merge to main, which redeploys Fly (or run `fly deploy`). Fly refuses calls from any address not listed here, and Clerk sign-ins from it too.
+
+   ```toml
+   WEB_ORIGIN = "https://example.com,https://virtualchatrooms.pages.dev,https://virtualchatrooms.fly.dev"
+   ```
+
+3. **Clerk:** the `pk_test_…` key is a development instance (the browser console warns about its usage limits). Create a production instance for `example.com` in the Clerk dashboard and add the DNS records it asks for. Then put `sk_live_…` in the Fly secret `CLERK_SECRET_KEY`, and `pk_live_…` in Pages' `VITE_CLERK_PUBLISHABLE_KEY` and in `fly.toml`'s `[build.args]`. Production instances only work on their own domain, so do this step last.
+4. **Optional, the backend on your domain too:** `fly certs add api.example.com`, add the CNAME it shows (to `virtualchatrooms.fly.dev`), then set Pages' `VITE_API_URL` to `https://api.example.com/api` and `VITE_REALM_URL` to `https://api.example.com/realm` and redeploy Pages. The `fly.dev` address keeps working either way.
 
 ## What's where
 
