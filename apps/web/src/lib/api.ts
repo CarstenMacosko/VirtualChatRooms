@@ -38,7 +38,7 @@ import {
   type UpdateRoomRequest,
   type UploadPlan,
 } from "@vcr/protocol";
-import { refreshSession, useAuth } from "./auth";
+import { currentToken, refreshSession, useAuth } from "./auth";
 
 /**
  * Thin fetch wrapper for apps/api. Vite proxies /api to the API in development. In production
@@ -66,7 +66,7 @@ async function request<T>(
   init?: RequestInit,
   retried = false,
 ): Promise<T> {
-  const token = useAuth.getState().auth?.token;
+  const token = retried ? useAuth.getState().auth?.token : await currentToken();
   const res = await fetch(API_BASE + path, {
     ...init,
     headers: {
