@@ -808,4 +808,20 @@ describe("sharing the dev server (pnpm share)", () => {
     expect(isAllowedParty("https://lucky-fox.trycloudflare.com", prod)).toBe(false);
     expect(isAllowedParty("https://app.example", prod)).toBe(true);
   });
+
+  it("lets the web origin make credentialed requests (the realm's client always does)", async () => {
+    const preflight = await app.inject({
+      method: "OPTIONS",
+      url: "/realm/matchmake/joinOrCreate/session",
+      headers: { origin: env.WEB_ORIGIN, "access-control-request-method": "POST" },
+    });
+    expect(preflight.headers["access-control-allow-origin"]).toBe(env.WEB_ORIGIN);
+    expect(preflight.headers["access-control-allow-credentials"]).toBe("true");
+    const other = await app.inject({
+      method: "OPTIONS",
+      url: "/realm/matchmake/joinOrCreate/session",
+      headers: { origin: "https://evil.example", "access-control-request-method": "POST" },
+    });
+    expect(other.headers["access-control-allow-origin"]).toBeUndefined();
+  });
 });
