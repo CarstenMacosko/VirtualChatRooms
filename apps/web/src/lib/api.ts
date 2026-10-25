@@ -60,13 +60,26 @@ export class ApiRequestError extends Error {
 
 const NoContent = z.unknown();
 
+interface RequestOptions {
+  /**
+   * Send no session token and never renew one: for the calls that create a session. Renewing
+   * a session calls exchange, so exchange waiting on a renewal would wait on itself forever.
+   */
+  signIn?: boolean;
+  retried?: boolean;
+}
+
 async function request<T>(
   schema: z.ZodType<T>,
   path: string,
   init?: RequestInit,
-  retried = false,
+  { signIn = false, retried = false }: RequestOptions = {},
 ): Promise<T> {
-  const token = retried ? useAuth.getState().auth?.token : await currentToken();
+  const token = signIn
+    ? undefined
+    : retried
+      ? useAuth.getState().auth?.token
+      : await currentToken();
   const res = await fetch(API_BASE + path, {
     ...init,
     headers: {
@@ -80,7 +93,8 @@ async function request<T>(
     // An expired session: renew it quietly if the sign-in provider still knows them; otherwise
     // sign out so they can sign in again.
     if (res.status === 401 && token) {
-      if (!retried && (await refreshSession())) return request(schema, path, init, true);
+      if (!retried && (await refreshSession()))
+        return request(schema, path, init, { retried: true });
       useAuth.getState().signOut();
     }
     const error = ApiError.safeParse(body);
@@ -104,8 +118,10 @@ const json = (method: string, body: unknown): RequestInit => ({
 
 export const api = {
   health: () => request(HealthResponse, "/health"),
-  devLogin: (body: DevLoginRequest) => request(DevLoginResponse, "/auth/dev-login", post(body)),
-  exchange: (body: ExchangeRequest) => request(ExchangeResponse, "/auth/exchange", post(body)),
+  devLogin: (body: DevLoginRequest) =>
+    request(DevLoginResponse, "/auth/dev-login", post(body), { signIn: true }),
+  exchange: (body: ExchangeRequest) =>
+    request(ExchangeResponse, "/auth/exchange", post(body), { signIn: true }),
   me: () => request(MeResponse, "/me"),
   myAvatar: () => request(AvatarResponse, "/me/avatar"),
   saveAvatar: (recipe: AvatarRecipe) =>
