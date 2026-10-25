@@ -8,7 +8,7 @@ import { Captures } from "./captures";
 import type { Database, DatabaseHandle } from "./db/client";
 import type { Env } from "./env";
 import { Gatherings } from "./gatherings";
-import { identityFromEnv, type IdentityProvider, webOrigins } from "./identity";
+import { identityFromEnv, type IdentityProvider, isWebOrigin } from "./identity";
 import { LiveHub } from "./live";
 import { PushNotifier, type PushSender } from "./push";
 import { authRoutes } from "./routes/auth";
@@ -61,7 +61,7 @@ export async function buildApp(ctx: AppContext) {
   });
   app.decorateRequest("session", null);
   await app.register(cors, {
-    origin: webOrigins(ctx.env),
+    origin: (origin, cb) => cb(null, origin !== undefined && isWebOrigin(origin, ctx.env)),
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
     // The realm's client (Colyseus) always sends credentials, and this answers the preflight for
     // /realm too, so a web app on another origin (Cloudflare Pages) can't join a call without it.

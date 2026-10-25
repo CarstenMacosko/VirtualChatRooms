@@ -55,7 +55,7 @@ const SHARE_ORIGIN = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
  */
 export function isAllowedParty(azp: unknown, env: Pick<Env, "WEB_ORIGIN" | "NODE_ENV">): boolean {
   if (azp === undefined) return true; // tokens minted server-side carry no origin
-  if (typeof azp === "string" && webOrigins(env).includes(azp)) return true;
+  if (typeof azp === "string" && isWebOrigin(azp, env)) return true;
   return env.NODE_ENV !== "production" && typeof azp === "string" && SHARE_ORIGIN.test(azp);
 }
 
@@ -64,6 +64,22 @@ export function webOrigins(env: Pick<Env, "WEB_ORIGIN">): string[] {
   return env.WEB_ORIGIN.split(",")
     .map((o) => o.trim().replace(/\/$/, ""))
     .filter(Boolean);
+}
+
+/**
+ * Whether `origin` is one of `WEB_ORIGIN`'s. An entry may start its host with `*.` for any one
+ * subdomain, e.g. `https://*.virtualchatrooms.pages.dev` for Cloudflare Pages' preview builds
+ * (only the Pages project itself can serve those addresses).
+ */
+export function isWebOrigin(origin: string, env: Pick<Env, "WEB_ORIGIN">): boolean {
+  return webOrigins(env).some((allowed) => {
+    const star = allowed.indexOf("://*.");
+    if (star < 0) return origin === allowed;
+    const scheme = allowed.slice(0, star + 3);
+    const suffix = allowed.slice(star + 4); // ".virtualchatrooms.pages.dev"
+    if (!origin.startsWith(scheme) || !origin.endsWith(suffix)) return false;
+    return /^[a-z0-9-]+$/.test(origin.slice(scheme.length, origin.length - suffix.length));
+  });
 }
 
 export function identityFromEnv(env: Env): IdentityProvider | null {
