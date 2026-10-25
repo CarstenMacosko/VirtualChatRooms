@@ -74,3 +74,29 @@ export function refreshSession(): Promise<boolean> {
     });
   return refreshing;
 }
+
+/**
+ * Whether a session token (a JWT) has expired, or will within `skewSeconds`. A token we can't
+ * read counts as fresh: the API has the final say.
+ */
+export function tokenExpired(token: string, skewSeconds = 30, now = Date.now()): boolean {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return false;
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const { exp } = JSON.parse(json) as { exp?: unknown };
+    return typeof exp === "number" && exp * 1000 < now + skewSeconds * 1000;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The session token to send, renewed first when it has expired and the provider can renew it,
+ * so a page opened after a while doesn't send every first request just to have it refused.
+ */
+export async function currentToken(): Promise<string | undefined> {
+  const token = useAuth.getState().auth?.token;
+  if (token && provider && tokenExpired(token)) await refreshSession();
+  return useAuth.getState().auth?.token;
+}

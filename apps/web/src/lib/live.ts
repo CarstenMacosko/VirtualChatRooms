@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import { LiveEvent } from "@vcr/protocol";
 import { API_BASE } from "./api";
-import { refreshSession, useAuth } from "./auth";
+import { refreshSession, tokenExpired, useAuth } from "./auth";
 
 type Ring = Extract<LiveEvent, { type: "ring" }>;
 type InviteResponse = Extract<LiveEvent, { type: "invite-response" }>;
@@ -121,6 +121,8 @@ export function useLiveEvents(token: string) {
     let retry: ReturnType<typeof setTimeout> | undefined;
 
     const connect = async () => {
+      // An expired token: renew it first (the new token restarts this effect).
+      if (tokenExpired(token) && (await refreshSession())) return;
       try {
         const res = await fetch(`${API_BASE}/events`, {
           headers: { authorization: `Bearer ${token}` },
