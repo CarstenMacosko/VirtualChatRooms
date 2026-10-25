@@ -810,17 +810,17 @@ describe("sharing the dev server (pnpm share)", () => {
   });
 
   it("accepts any one subdomain where WEB_ORIGIN says *. (Pages preview builds)", () => {
-    const env = { WEB_ORIGIN: "https://vcr.pages.dev, https://*.vcr.pages.dev" };
-    expect(isWebOrigin("https://vcr.pages.dev", env)).toBe(true);
-    expect(isWebOrigin("https://f9a632ec.vcr.pages.dev", env)).toBe(true);
-    expect(isWebOrigin("https://deploy-realm-cors.vcr.pages.dev", env)).toBe(true);
-    expect(isWebOrigin("https://a.b.vcr.pages.dev", env)).toBe(false);
-    expect(isWebOrigin("https://evilvcr.pages.dev", env)).toBe(false);
-    expect(isWebOrigin("https://.vcr.pages.dev", env)).toBe(false);
-    expect(isWebOrigin("http://f9a632ec.vcr.pages.dev", env)).toBe(false);
-    expect(isWebOrigin("https://f9a632ec.vcr.pages.dev.evil.example", env)).toBe(false);
+    const origins = { WEB_ORIGIN: "https://vcr.pages.dev, https://*.vcr.pages.dev" };
+    expect(isWebOrigin("https://vcr.pages.dev", origins)).toBe(true);
+    expect(isWebOrigin("https://f9a632ec.vcr.pages.dev", origins)).toBe(true);
+    expect(isWebOrigin("https://deploy-realm-cors.vcr.pages.dev", origins)).toBe(true);
+    expect(isWebOrigin("https://a.b.vcr.pages.dev", origins)).toBe(false);
+    expect(isWebOrigin("https://evilvcr.pages.dev", origins)).toBe(false);
+    expect(isWebOrigin("https://.vcr.pages.dev", origins)).toBe(false);
+    expect(isWebOrigin("http://f9a632ec.vcr.pages.dev", origins)).toBe(false);
+    expect(isWebOrigin("https://f9a632ec.vcr.pages.dev.evil.example", origins)).toBe(false);
     expect(
-      isAllowedParty("https://f9a632ec.vcr.pages.dev", { ...env, NODE_ENV: "production" }),
+      isAllowedParty("https://f9a632ec.vcr.pages.dev", { ...origins, NODE_ENV: "production" }),
     ).toBe(true);
   });
 
@@ -838,5 +838,11 @@ describe("sharing the dev server (pnpm share)", () => {
       headers: { origin: "https://evil.example", "access-control-request-method": "POST" },
     });
     expect(other.headers["access-control-allow-origin"]).toBeUndefined();
+    expect(other.statusCode).toBe(403);
+    const script = await app.inject({
+      method: "POST",
+      url: "/realm/matchmake/joinOrCreate/session",
+    });
+    expect(script.statusCode).not.toBe(403);
   });
 });

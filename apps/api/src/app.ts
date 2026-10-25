@@ -68,6 +68,17 @@ export async function buildApp(ctx: AppContext) {
     // Sign-in is a bearer token, never a cookie, so this lets no ambient credentials in.
     credentials: true,
   });
+  // The realm (Colyseus, forwarded at /realm) echoes back any origin, and CORS above lets refused
+  // preflights through to it: turn away browsers from other sites here instead. Requests without
+  // an Origin (scripts, the smoke test) carry no browser credentials and pass.
+  app.addHook("onRequest", async (req, reply) => {
+    const origin = req.headers.origin;
+    if (req.url.startsWith("/realm") && origin && !isWebOrigin(origin, ctx.env)) {
+      return reply
+        .code(403)
+        .send({ error: "forbidden_origin", message: "Not allowed from this site." });
+    }
+  });
 
   const live = new LiveHub();
   const push = new PushNotifier(ctx.db, ctx.env, ctx.pushSender);
