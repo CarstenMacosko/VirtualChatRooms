@@ -41,7 +41,7 @@ The Fly address works on its own too, since it serves the same web app.
 
    Optional, for calls while the app is closed: copy `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` from `.env` the same way.
 
-4. In `fly.toml`, set `WEB_ORIGIN` to every address the app is opened at: your Pages site and the Fly address, comma-separated.
+4. In `fly.toml`, set `WEB_ORIGIN` to every address the app is opened at: your Pages site, its preview builds and the Fly address, comma-separated. An entry can start its host with `*.` for any one subdomain: `https://*.virtualchatrooms.pages.dev` covers the per-branch and per-commit previews (only your Pages project can serve those). Browsers from any other site are refused, `/realm` included.
 
 5. Deploy. Later deploys are the same command.
 
@@ -65,7 +65,7 @@ In the Cloudflare dashboard, open the Pages project that serves the landing page
 | Build command          | `cd ../.. && (command -v pnpm \|\| npm i -g pnpm@9.15.9) && pnpm install --frozen-lockfile && pnpm --filter @vcr/web build` |
 | Build output directory | `dist`                                                                                                                      |
 
-Under **Settings → Environment variables** (production, and the same for preview so branch builds work too):
+Under **Settings → Variables and secrets**, set these for **Production**, then switch the environment picker to **Preview** and set the same there, so each branch and pull request gets a preview build you can sign in and call on. Pasting `NAME=value` lines into the name field adds them all at once:
 
 | Variable                     | Value                                                 |
 | ---------------------------- | ----------------------------------------------------- |
