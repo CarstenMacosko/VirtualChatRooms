@@ -3,12 +3,12 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   type Aabb,
   aabbToCollider,
-  clipToWalkways,
   collisionBoxes,
   collisionToWorld,
   dropWalkwayTriangles,
   passableWalkways,
   type PhysicsWorld,
+  walkwayColliders,
 } from "@vcr/engine";
 import type { SceneAssets, Walkway } from "@vcr/protocol";
 import { assetUrl } from "../lib/api";
@@ -47,21 +47,22 @@ export async function loadRoomCollision(scene: SceneAssets): Promise<RoomCollisi
 }
 
 /**
- * Adds the room's colliders with walkways opened up wide enough to walk through: clipped boxes when the mesh is boxes,
- * otherwise the triangles, minus those inside a walkway.
+ * Adds the room's colliders with walkways opened up wide enough to walk through: when the mesh is
+ * boxes, clipped boxes with walls put back along the walkways' edges; otherwise the triangles,
+ * minus those inside a walkway.
  */
 export function addRoomColliders(
   physics: PhysicsWorld,
   collision: RoomCollision,
   walkways: readonly Walkway[],
 ) {
-  const open = passableWalkways(walkways);
   if (collision.boxes) {
-    for (const box of clipToWalkways(collision.boxes, open)) {
+    for (const box of walkwayColliders(collision.boxes, walkways)) {
       physics.addBox(aabbToCollider(box));
     }
     return;
   }
+  const open = passableWalkways(walkways);
   for (const m of collision.meshes) {
     const indices = dropWalkwayTriangles(m.vertices, m.indices, open);
     if (indices.length) physics.addTrimesh(m.vertices, indices);

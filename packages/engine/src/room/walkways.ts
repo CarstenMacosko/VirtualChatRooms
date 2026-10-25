@@ -79,6 +79,66 @@ export function passableWalkways(walkways: readonly Walkway[]): Walkway[] {
   }));
 }
 
+/** Thickness of the wall put back at a walkway's edge (`edgeWalls`). */
+export const WALKWAY_EDGE_THICKNESS = 0.02;
+
+/**
+ * Where `open` (a walkway widened by `passableWalkways`) cut all the way through a box that
+ * reaches past one of the drawn walkway's sides, the box moves to the open edge on that side as
+ * a thin wall: stepping off the walkway there still meets what was there. Without it, a walkway
+ * near the room's edge cuts through the walls (two grid cells thick) and opens onto the void. A
+ * box that reaches past the open edge needs none; its own remaining piece is that wall.
+ */
+function edgeWalls(box: Aabb, drawn: Walkway, open: Walkway, cut: number): Aabb[] {
+  const { min, max } = box;
+  const [ox0, oz0] = open.min;
+  const [ox1, oz1] = open.max;
+  if (max[1] <= cut || max[0] <= ox0 || min[0] >= ox1 || max[2] <= oz0 || min[2] >= oz1) {
+    return [];
+  }
+  const t = WALKWAY_EDGE_THICKNESS;
+  const y0 = Math.max(min[1], cut);
+  const y1 = max[1];
+  // Along the edge, the box's extent inside the open rectangle.
+  const x0 = Math.max(min[0], ox0);
+  const x1 = Math.min(max[0], ox1);
+  const z0 = Math.max(min[2], oz0);
+  const z1 = Math.min(max[2], oz1);
+  const walls: Aabb[] = [];
+  if (max[0] > drawn.max[0] && max[0] < ox1 + t) {
+    walls.push({ min: [ox1, y0, z0], max: [ox1 + t, y1, z1] });
+  }
+  if (min[0] < drawn.min[0] && min[0] > ox0 - t) {
+    walls.push({ min: [ox0 - t, y0, z0], max: [ox0, y1, z1] });
+  }
+  if (max[2] > drawn.max[1] && max[2] < oz1 + t) {
+    walls.push({ min: [x0, y0, oz1], max: [x1, y1, oz1 + t] });
+  }
+  if (min[2] < drawn.min[1] && min[2] > oz0 - t) {
+    walls.push({ min: [x0, y0, oz0 - t], max: [x1, y1, oz0] });
+  }
+  return walls.filter(solid);
+}
+
+/**
+ * A room's collision boxes as people walking it meet them: every walkway opened wide enough to
+ * pass through (`passableWalkways`), and what the opening cut through moved to its edge
+ * (`edgeWalls`), so you can't step off the walkways through a wall. Where walkways overlap, the
+ * other walkways open their part of each edge wall, leaving walls only around the whole shape.
+ */
+export function walkwayColliders(
+  boxes: readonly Aabb[],
+  walkways: readonly Walkway[],
+  cut = WALKWAY_CUT_HEIGHT,
+): Aabb[] {
+  const open = passableWalkways(walkways);
+  const pieces = clipToWalkways(boxes, open, cut);
+  const edges = walkways.flatMap((w, n) =>
+    boxes.filter(solid).flatMap((b) => edgeWalls(b, w, open[n]!, cut)),
+  );
+  return [...pieces, ...clipToWalkways(edges, open, cut)];
+}
+
 /** Whether a world point is inside a walkway's prism (above the cut). */
 export function inWalkway(
   x: number,

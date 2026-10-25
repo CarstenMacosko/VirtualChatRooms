@@ -35,16 +35,17 @@ import {
   Vector3,
 } from "three";
 import {
-  clipToWalkways,
   dropWalkwayTriangles,
   nextSeatId,
   newSetupId,
+  passableWalkways,
   rectFromCorners,
   resizeTableFromCorner,
   seatsAlongLine,
   tableCorners,
   type Vec3,
   walkwayBigEnough,
+  walkwayColliders,
   yawTowards,
 } from "@vcr/engine";
 import type { RoomSetup, SceneAssets, Seat, Table, Walkway } from "@vcr/protocol";
@@ -744,7 +745,7 @@ const clampShift = (d: number, lo: number, hi: number, min: number, max: number)
 
 // --- what's drawn over the room ----------------------------------------------------------
 
-/** The collision boxes as walkways leave them, as faint lines. */
+/** The collision as walkways leave it (what people walking the room meet), as faint lines. */
 function CollisionLines({
   collision,
   walkways,
@@ -755,7 +756,7 @@ function CollisionLines({
   const lines = useMemo(() => {
     const positions: number[] = [];
     if (collision.boxes) {
-      for (const { min, max } of clipToWalkways(collision.boxes, walkways)) {
+      for (const { min, max } of walkwayColliders(collision.boxes, walkways)) {
         const c = (i: number): Vec3 => [
           i & 4 ? max[0] : min[0],
           i & 2 ? max[1] : min[1],
@@ -768,7 +769,7 @@ function CollisionLines({
       }
     } else {
       for (const m of collision.meshes) {
-        const indices = dropWalkwayTriangles(m.vertices, m.indices, walkways);
+        const indices = dropWalkwayTriangles(m.vertices, m.indices, passableWalkways(walkways));
         for (let t = 0; t + 2 < indices.length; t += 3) {
           for (const [a, b] of [
             [t, t + 1],
