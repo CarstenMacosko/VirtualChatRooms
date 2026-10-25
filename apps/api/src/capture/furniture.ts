@@ -300,6 +300,28 @@ function flatPatches(map: HeightMap, label: Int32Array): Patch[] {
   return patches;
 }
 
+/**
+ * A patch built by a constructor rather than an object literal. Node 24's V8 (13.6, x64 and arm64)
+ * miscompiles the literal once Maglev optimizes describePatch: every patch made from it shared
+ * one set of number fields, so describing patch 3 rewrote the height and size of patches 0–2,
+ * and seats came and went between identical runs (the furniture test, mostly on CI).
+ * `--no-maglev` makes it go away too; a constructor doesn't clone the literal's boilerplate.
+ */
+class PatchRecord implements Patch {
+  constructor(
+    public id: number,
+    public cells: number[],
+    public height: number,
+    public spread: number,
+    public center: Vec2,
+    public major: Vec2,
+    public minor: Vec2,
+    public length: number,
+    public width: number,
+    public fill: number,
+  ) {}
+}
+
 function describePatch(map: HeightMap, id: number, cells: number[]): Patch {
   const { nx, cell, x0, z0, top } = map;
   const xs = cells.map((c) => x0 + ((c % nx) + 0.5) * cell);
@@ -328,18 +350,18 @@ function describePatch(map: HeightMap, id: number, cells: number[]): Patch {
   const ma = (best.a[0] + best.a[1]) / 2;
   const mb = (best.b[0] + best.b[1]) / 2;
   const long = ext[0] >= ext[1];
-  return {
+  return new PatchRecord(
     id,
     cells,
-    height: q(0.5),
-    spread: q(0.9) - q(0.1),
-    center: [c * ma - s * mb, s * ma + c * mb],
-    major: long ? [c, s] : [-s, c],
-    minor: long ? [-s, c] : [c, s],
-    length: Math.max(...ext),
-    width: Math.min(...ext),
-    fill: (cells.length * cell * cell) / best.area,
-  };
+    q(0.5),
+    q(0.9) - q(0.1),
+    [c * ma - s * mb, s * ma + c * mb],
+    long ? [c, s] : [-s, c],
+    long ? [-s, c] : [c, s],
+    Math.max(...ext),
+    Math.min(...ext),
+    (cells.length * cell * cell) / best.area,
+  );
 }
 
 /**
