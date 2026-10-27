@@ -43,6 +43,13 @@
       "when": 1792738833359,
       "tag": "0005_links_and_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793077978434,
+      "tag": "0006_built_in_rooms",
+      "breakpoints": true
     }
   ]
 }

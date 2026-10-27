@@ -1,6 +1,7 @@
 import { type FormEvent, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { type CaptureOptions, type RoomInfo, SCAN_FILE_PATTERN, type UpAxis } from "@vcr/protocol";
 import { api, ApiRequestError, uploadParts } from "../lib/api";
+import { builtInRoomBlurb } from "./ui";
 
 const RoomSetupEditor = lazy(() => import("../world/RoomSetupEditor"));
 
@@ -43,7 +44,7 @@ const SCALE_SOURCES = {
   user: "set by you",
 } as const;
 
-/** Your rooms: the sample room plus scans you've imported, and importing a new one. */
+/** Your rooms: the built-in rooms plus scans you've imported, and importing a new one. */
 export function YourRooms(props: {
   rooms: RoomInfo[];
   capture: CaptureOptions | null;
@@ -110,7 +111,7 @@ function RoomRow({ room, onChanged }: { room: RoomInfo; onChanged(): void }) {
             {" "}
             ·{" "}
             {room.kind === "sample"
-              ? "built-in sample room"
+              ? builtInRoomBlurb(room.builtIn)
               : room.status === "ready" && scan
                 ? `${meters(scan.size.width)} × ${meters(scan.size.depth)}, ${meters(scan.size.height)} tall`
                 : room.status === "processing"

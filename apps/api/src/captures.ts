@@ -1,6 +1,13 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
-import { type RoomInfo, ScanDetails, type ScanFormat, type UpAxis } from "@vcr/protocol";
+import {
+  BuiltInRoomId,
+  type RoomInfo,
+  type RoomSummary,
+  ScanDetails,
+  type ScanFormat,
+  type UpAxis,
+} from "@vcr/protocol";
 import { processScan, ScanRejectedError } from "./capture/pipeline";
 import { ByoSplatProvider, type CaptureProvider, KiriProvider } from "./capture/providers";
 import type { Database } from "./db/client";
@@ -16,12 +23,22 @@ export interface JobOptions {
 
 type RoomRow = typeof rooms.$inferSelect;
 
-export function roomInfo(row: RoomRow): RoomInfo {
-  const scan = ScanDetails.safeParse(row.scan);
+/** What people joining a gathering need to know about its room. */
+export function roomSummary(row: RoomRow): RoomSummary {
+  const builtIn = BuiltInRoomId.safeParse(row.builtIn);
   return {
     id: row.id,
     name: row.name,
     kind: row.kind,
+    // A sample room from before there were several built-in rooms is the first one.
+    builtIn: builtIn.success ? builtIn.data : row.kind === "sample" ? "oval-office" : null,
+  };
+}
+
+export function roomInfo(row: RoomRow): RoomInfo {
+  const scan = ScanDetails.safeParse(row.scan);
+  return {
+    ...roomSummary(row),
     status: row.status,
     progress: row.progress,
     error: row.error,

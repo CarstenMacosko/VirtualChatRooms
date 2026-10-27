@@ -26,13 +26,14 @@ import {
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   PoseSender,
-  SAMPLE_ROOM_LAYOUT,
+  builtInLayout,
   scannedRoomLayout,
   spawnPointFor,
   type Vec3,
 } from "@vcr/engine";
 import {
   EmoteId,
+  type BuiltInRoomId,
   type JoinSessionResponse,
   LocoState,
   type RoomInfo,
@@ -55,7 +56,7 @@ import { EMOTE_GLYPHS } from "./emotes";
 import { InvitePanel } from "./InvitePanel";
 import { DeviceSelect, type JoinChoice, PreJoin, rememberedDevices, useDevices } from "./PreJoin";
 import { type PanelTab, SidePanel } from "./SidePanel";
-import { Dialog, elapsed } from "./ui";
+import { builtInRoomBlurb, Dialog, elapsed } from "./ui";
 
 // Three.js, Spark, Rapier and three-vrm are large; load them only when entering the room view.
 const World = lazy(() => import("../world/World"));
@@ -163,6 +164,8 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   // Face tracking is heavy for phones; there it starts off.
   const faceOn = view === "room" && (faceChoice ?? (media.cameraOn && !isTouch()));
   const selfVideo = realm.selfId ? media.videos.get(realm.selfId) : undefined;
+  // The projector shows the newest screen share (a Map keeps insertion order).
+  const projector = [...media.screens.values()].at(-1) ?? null;
   const face = useFaceTracking(faceOn, selfVideo?.mediaStreamTrack ?? null);
   const now = useNow(250);
   const [joinedAt] = useState(Date.now);
@@ -174,7 +177,11 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   // The room loads from the first join and again only when the host moves the call to another
   // room; rejoins (reconnects) re-sign the same assets, which are already loaded.
   const [scene, setScene] = useState<SceneAssets | null | undefined>(undefined);
-  const [sceneRoom, setSceneRoom] = useState<{ id: string; name: string } | null>(null);
+  const [sceneRoom, setSceneRoom] = useState<{
+    id: string;
+    name: string;
+    builtIn: BuiltInRoomId | null;
+  } | null>(null);
   const joined = realm.joinInfo;
   if (joined && joined.room.id !== sceneRoom?.id) {
     if (sceneRoom) {
@@ -183,7 +190,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
       realm.poseHub.forgetSelf();
       setGridSpot(null);
     }
-    setSceneRoom({ id: joined.room.id, name: joined.room.name });
+    setSceneRoom({ id: joined.room.id, name: joined.room.name, builtIn: joined.room.builtIn });
     setScene(joined.scene);
   }
 
@@ -191,7 +198,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
   const selfUserId = me?.userId;
   useEffect(() => {
     if (view === "room" || !selfUserId || scene === undefined) return;
-    const layout = scene ? scannedRoomLayout(scene.manifest) : SAMPLE_ROOM_LAYOUT;
+    const layout = scene ? scannedRoomLayout(scene.manifest) : builtInLayout(sceneRoom?.builtIn);
     const spawn = spawnPointFor(selfUserId, layout);
     // A group you joined from the map, else wherever you were standing (so switching to the
     // grid keeps your group), else your spawn point.
@@ -209,7 +216,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
       });
     }, 250);
     return () => clearInterval(timer);
-  }, [view, selfUserId, scene, realm.poseHub, gridSpot]);
+  }, [view, selfUserId, scene, sceneRoom?.builtIn, realm.poseHub, gridSpot]);
 
   const groups = useGroups(realm, audio, media.setFocus);
   const myGroup = groups.groups.find((g) => g.mine);
@@ -224,7 +231,7 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
       setPanel(null);
       return;
     }
-    const layout = scene ? scannedRoomLayout(scene.manifest) : SAMPLE_ROOM_LAYOUT;
+    const layout = scene ? scannedRoomLayout(scene.manifest) : builtInLayout(sceneRoom?.builtIn);
     const spot = groups.spotToJoin(group.id, layout.bounds);
     if (spot) setGridSpot(spot);
   };
@@ -330,6 +337,8 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
                 <World
                   key={sceneRoom?.id}
                   scene={scene}
+                  builtIn={sceneRoom?.builtIn ?? null}
+                  projector={projector}
                   participants={realm.participants}
                   selfId={realm.selfId}
                   emotes={realm.emotes}
@@ -901,7 +910,7 @@ function SettingsDialog(props: { media: MediaState; audio: SpatialAudio; onClose
   );
 }
 
-/** Host: move everyone to another of your rooms (the sample room, or a scan). */
+/** Host: move everyone to another of your rooms (a built-in room, or a scan). */
 function ChangeRoomDialog(props: {
   sessionId: string;
   currentRoomId: string | null;
@@ -941,7 +950,7 @@ function ChangeRoomDialog(props: {
                 <b>{r.name}</b>
                 <span className="muted">
                   {r.kind === "sample"
-                    ? "Built-in sample room"
+                    ? builtInRoomBlurb(r.builtIn)
                     : r.scan
                       ? `Your scan · ${r.scan.size.width.toFixed(1)} × ${r.scan.size.depth.toFixed(1)} m`
                       : "Your scan"}

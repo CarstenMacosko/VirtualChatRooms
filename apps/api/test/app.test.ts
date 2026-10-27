@@ -29,6 +29,7 @@ import { join } from "node:path";
 import { buildApp } from "../src/app";
 import { isAllowedParty, isWebOrigin } from "../src/identity";
 import { createDatabase, type DatabaseHandle } from "../src/db/client";
+import { rooms as roomsTable } from "../src/db/schema";
 import { parseEnv } from "../src/env";
 import { FsStorage } from "../src/storage";
 
@@ -225,15 +226,44 @@ describe("sessions", () => {
     return { host, friends, room: rooms[0]! };
   }
 
-  it("gives each user a sample room", async () => {
+  it("gives each user the built-in rooms, once", async () => {
     const a = await person("Roomy");
     const first = RoomsResponse.parse((await a.call("GET", "/rooms")).json());
     expect(first.rooms).toEqual([
-      expect.objectContaining({ name: "My living room", kind: "sample", status: "ready" }),
+      expect.objectContaining({
+        name: "Oval Office",
+        kind: "sample",
+        builtIn: "oval-office",
+        status: "ready",
+      }),
+      expect.objectContaining({
+        name: "Presentation hall",
+        kind: "sample",
+        builtIn: "presentation",
+        status: "ready",
+      }),
     ]);
     expect(first.capture.video.available).toBe(false);
-    const second = RoomsResponse.parse((await a.call("GET", "/rooms")).json());
-    expect(second.rooms[0]?.id).toBe(first.rooms[0]?.id);
+    // Asked again (and twice at once), nothing is added.
+    const [second, third] = await Promise.all([
+      a.call("GET", "/rooms").then((r) => RoomsResponse.parse(r.json())),
+      a.call("GET", "/rooms").then((r) => RoomsResponse.parse(r.json())),
+    ]);
+    expect(second.rooms.map((r) => r.id)).toEqual(first.rooms.map((r) => r.id));
+    expect(third.rooms.map((r) => r.id)).toEqual(first.rooms.map((r) => r.id));
+  });
+
+  it("turns an older account's living room into the Oval Office", async () => {
+    const a = await person("Old Timer");
+    const id = `rm_legacy_${a.user.id}`;
+    await database.db
+      .insert(roomsTable)
+      .values({ id, ownerId: a.user.id, name: "My living room", kind: "sample" });
+    const { rooms: list } = RoomsResponse.parse((await a.call("GET", "/rooms")).json());
+    expect(list.map((r) => [r.id === id, r.name, r.builtIn])).toEqual([
+      [true, "Oval Office", "oval-office"],
+      [false, "Presentation hall", "presentation"],
+    ]);
   });
 
   it("only lets owners host in their rooms", async () => {
@@ -351,7 +381,7 @@ describe("sessions", () => {
     expect(link.path).toBe(`/join/${link.token}`);
 
     const info = GuestLinkInfo.parse((await app.inject({ url: `/guest/${link.token}` })).json());
-    expect(info).toEqual({ hostName: "Guest Friend Host", roomName: "My living room", live: true });
+    expect(info).toEqual({ hostName: "Guest Friend Host", roomName: "Oval Office", live: true });
 
     const usersBefore = (await database.db.query.users.findMany()).length;
     const res = await app.inject({
@@ -519,7 +549,7 @@ describe("live events", () => {
     expect(await calleeStream.next("ring")).toMatchObject({
       sessionId: session.id,
       from: { id: host.user.id, displayName: "Caller" },
-      roomName: "My living room",
+      roomName: "Oval Office",
     });
 
     await callee.call("POST", `/sessions/${session.id}/join`);
@@ -589,7 +619,7 @@ describe("web push", () => {
           type: "ring",
           sessionId: id,
           from: { id: host.user.id, displayName: "Push Host" },
-          roomName: "My living room",
+          roomName: "Oval Office",
         },
       },
     ]);

@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { RING_TIMEOUT_MS, type SessionInfo } from "@vcr/protocol";
+import { roomSummary } from "./captures";
 import type { Database } from "./db/client";
 import { rooms, sessionInvites, sessions, users } from "./db/schema";
 import type { LiveHub } from "./live";
@@ -168,7 +169,7 @@ export class Gatherings {
     return {
       id: row.session.id,
       status: row.session.status,
-      room: { id: row.room.id, name: row.room.name, kind: row.room.kind },
+      room: roomSummary(row.room),
       host: { id: row.session.hostId, displayName: row.hostName },
       invites,
       createdAt: row.session.createdAt.toISOString(),

@@ -19,11 +19,11 @@ import {
 } from "@vcr/protocol";
 import type { Services } from "../app";
 import { requireSession, verifySessionToken } from "../auth";
-import { calls, links, rooms, sessions, users } from "../db/schema";
+import { calls, links, sessions, users } from "../db/schema";
 import { type IdParams, parseBody, sendError } from "../http";
 import { befriend } from "../social";
 import { ageMessage, signedInAs } from "./auth";
-import { ensureSampleRoom } from "./rooms";
+import { defaultRoomId } from "./rooms";
 import { newGuestLink } from "./sessions";
 
 type TokenParams = { Params: { token: string } };
@@ -352,14 +352,9 @@ export function linkRoutes(app: FastifyInstance, ctx: Services) {
       .limit(1);
     let sessionId = current?.id;
     if (!sessionId) {
-      await ensureSampleRoom(db, me(req));
-      const [room] = await db
-        .select({ id: rooms.id })
-        .from(rooms)
-        .where(and(eq(rooms.ownerId, me(req)), eq(rooms.status, "ready"), eq(rooms.kind, "sample")))
-        .limit(1);
       sessionId = `ses_${randomUUID()}`;
-      await db.insert(sessions).values({ id: sessionId, roomId: room!.id, hostId: me(req) });
+      const roomId = await defaultRoomId(db, me(req));
+      await db.insert(sessions).values({ id: sessionId, roomId, hostId: me(req) });
     }
     const link = await newGuestLink(db, sessionId, me(req));
     const [accepted] = await db

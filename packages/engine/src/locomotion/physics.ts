@@ -14,6 +14,8 @@ export type Rapier = typeof RAPIER;
 export interface BoxCollider {
   center: Vec3;
   halfExtents: Vec3;
+  /** Turned about +Y (radians), like a table's yaw; axis-aligned when absent. */
+  yaw?: number;
 }
 
 /** Static room geometry plus the queries the character and camera need. */
@@ -35,8 +37,10 @@ export class PhysicsWorld {
     return RAPIER;
   }
 
-  addBox({ center, halfExtents }: BoxCollider) {
-    const desc = RAPIER.ColliderDesc.cuboid(...halfExtents).setTranslation(...center);
+  addBox({ center, halfExtents, yaw = 0 }: BoxCollider) {
+    const desc = RAPIER.ColliderDesc.cuboid(...halfExtents)
+      .setTranslation(...center)
+      .setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) });
     this.queriesStale = true;
     return this.world.createCollider(desc);
   }

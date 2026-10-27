@@ -87,6 +87,8 @@ export const rooms = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     kind: roomKind("kind").notNull(),
+    /** Which built-in room (`BuiltInRoomId`) a sample room is; null for scans. */
+    builtIn: text("built_in"),
     status: roomStatus("status").notNull().default("ready"),
     /** 0–1 while processing. */
     progress: real("progress"),
@@ -98,7 +100,11 @@ export const rooms = pgTable(
     scan: jsonb("scan"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("rooms_owner").on(t.ownerId)],
+  (t) => [
+    index("rooms_owner").on(t.ownerId),
+    // One of each built-in room per person, even when two requests set them up at once.
+    uniqueIndex("rooms_owner_built_in").on(t.ownerId, t.builtIn),
+  ],
 );
 
 export const captureSource = pgEnum("capture_source", ["video", "splat_upload"]);

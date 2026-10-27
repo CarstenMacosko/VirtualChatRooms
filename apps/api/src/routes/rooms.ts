@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, lt } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
+  type BuiltInRoomId,
   CompleteUploadRequest,
   CreateScanRequest,
   type CreateScanResponse,
@@ -32,20 +33,65 @@ const UPLOAD_TTL_MS = 6 * 60 * 60_000;
 /** Asset URLs are fetched right after joining; rejoining (every reconnect) issues fresh ones. */
 export const ASSET_URL_TTL_MS = 60 * 60_000;
 
-/** Everyone gets a sample room to start in, and it stays first in their list. */
-export async function ensureSampleRoom(db: Database, ownerId: string) {
-  const [sample] = await db
-    .select({ id: rooms.id })
+/** The rooms that ship with the app, in the order people see them; the first is the default. */
+export const BUILT_IN_ROOMS: ReadonlyArray<{ id: BuiltInRoomId; name: string }> = [
+  { id: "oval-office", name: "Oval Office" },
+  { id: "presentation", name: "Presentation hall" },
+];
+/** What the first built-in room was called, before it became the Oval Office. */
+const OLD_SAMPLE_NAME = "My living room";
+
+/** Everyone gets every built-in room to start in; they stay first in their list. */
+export async function ensureBuiltInRooms(db: Database, ownerId: string) {
+  const samples = await db
+    .select({ id: rooms.id, name: rooms.name, builtIn: rooms.builtIn })
     .from(rooms)
     .where(and(eq(rooms.ownerId, ownerId), eq(rooms.kind, "sample")))
-    .limit(1);
-  if (sample) return;
-  await db.insert(rooms).values({
-    id: `rm_${randomUUID()}`,
-    ownerId,
-    name: "My living room",
-    kind: "sample",
-  });
+    .orderBy(asc(rooms.createdAt));
+  const have = new Set(samples.map((s) => s.builtIn));
+  // Accounts from before there were several built-in rooms have one sample room, a living room:
+  // it becomes the Oval Office (keeping a name they chose).
+  const old = samples.find((s) => s.builtIn === null);
+  if (old && !have.has("oval-office")) {
+    await db
+      .update(rooms)
+      .set({ builtIn: "oval-office", ...(old.name === OLD_SAMPLE_NAME && { name: "Oval Office" }) })
+      .where(eq(rooms.id, old.id));
+    have.add("oval-office");
+  }
+  const missing = BUILT_IN_ROOMS.filter((b) => !have.has(b.id));
+  if (!missing.length) return;
+  await db
+    .insert(rooms)
+    .values(
+      missing.map((b) => ({
+        id: `rm_${randomUUID()}`,
+        ownerId,
+        name: b.name,
+        kind: "sample" as const,
+        builtIn: b.id,
+      })),
+    )
+    // Two requests setting rooms up at once: the other one already made them.
+    .onConflictDoNothing();
+}
+
+/** The room a gathering happens in when nobody picked one: the first built-in room. */
+export async function defaultRoomId(db: Database, ownerId: string): Promise<string> {
+  await ensureBuiltInRooms(db, ownerId);
+  const samples = await db
+    .select({ id: rooms.id, builtIn: rooms.builtIn })
+    .from(rooms)
+    .where(and(eq(rooms.ownerId, ownerId), eq(rooms.kind, "sample")))
+    .orderBy(asc(rooms.createdAt));
+  return (samples.find((s) => s.builtIn === BUILT_IN_ROOMS[0]!.id) ?? samples[0]!).id;
+}
+
+/** Built-in rooms first, in their order, then scans oldest first. */
+function listOrder(room: { kind: string; builtIn: string | null }) {
+  if (room.kind !== "sample") return BUILT_IN_ROOMS.length;
+  const i = BUILT_IN_ROOMS.findIndex((b) => b.id === room.builtIn);
+  return i < 0 ? 0 : i;
 }
 
 /**
@@ -118,7 +164,7 @@ export function roomRoutes(app: FastifyInstance, ctx: Services) {
   };
 
   app.get("/rooms", auth, async (req): Promise<RoomsResponse> => {
-    await ensureSampleRoom(db, me(req));
+    await ensureBuiltInRooms(db, me(req));
     // Uploads nobody finished before their URLs expired won't finish now.
     await db
       .update(rooms)
@@ -135,8 +181,8 @@ export function roomRoutes(app: FastifyInstance, ctx: Services) {
       .from(rooms)
       .where(eq(rooms.ownerId, me(req)))
       .orderBy(asc(rooms.createdAt));
-    // The sample room first: it's the default for a gathering.
-    owned.sort((a, b) => Number(b.kind === "sample") - Number(a.kind === "sample"));
+    // Built-in rooms first: the first is the default for a gathering.
+    owned.sort((a, b) => listOrder(a) - listOrder(b));
     return {
       rooms: owned.map(roomInfo),
       capture: {
