@@ -3,6 +3,7 @@ import {
   applySelfie,
   CLOTHING_COLORS,
   EYE_COLORS,
+  FORMAL_OUTFITS,
   HAIR_COLORS,
   randomRecipe,
   SKIN_TONES,
@@ -52,6 +53,8 @@ const LABELS: Record<string, string> = {
   hoodie: "Hoodie",
   sweater: "Sweater",
   dress: "Dress",
+  tuxedo: "Tuxedo",
+  suit: "Suit",
   pants: "Pants",
   shorts: "Shorts",
   skirt: "Skirt",
@@ -281,6 +284,26 @@ export function AvatarCreator(props: AvatarCreatorProps) {
 
           {tab === "outfit" && (
             <>
+              <fieldset className="field">
+                <legend>Formal</legend>
+                <div className="chips">
+                  {(["tuxedo", "suit"] as const).map((look) => {
+                    const on = recipe.outfit.top === look;
+                    return (
+                      <button
+                        key={look}
+                        className={`chip${on ? " on" : ""}`}
+                        aria-pressed={on}
+                        onClick={() =>
+                          update((r) => ({ ...r, outfit: { ...FORMAL_OUTFITS[look] } }))
+                        }
+                      >
+                        {look === "tuxedo" ? "🤵 Tuxedo" : "👔 Suit"}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
               <Choices
                 label="Top"
                 options={Top.options}

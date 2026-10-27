@@ -28,6 +28,26 @@ const pick = <T>(random: () => number, list: readonly T[]): T =>
 /** Mostly near the middle: random sliders shouldn't produce extreme faces. */
 const slider = (random: () => number) => Math.round((0.25 + random() * 0.5) * 100) / 100;
 
+const CASUAL_TOPS = Top.options.filter((t) => t !== "tuxedo" && t !== "suit");
+
+/** The formal outfits, one tap each in the creator: a black tuxedo, and a navy skirt suit. */
+export const FORMAL_OUTFITS = {
+  tuxedo: {
+    top: "tuxedo",
+    topColor: "#1f2433",
+    bottom: "pants",
+    bottomColor: "#1f2433",
+    shoesColor: "#1f2433",
+  },
+  suit: {
+    top: "suit",
+    topColor: "#2c4a7a",
+    bottom: "skirt",
+    bottomColor: "#2c4a7a",
+    shoesColor: "#1f2433",
+  },
+} as const satisfies Record<string, AvatarRecipe["outfit"]>;
+
 /** A random but reasonable avatar ("Surprise me", and everyone's look before they make one). */
 export function randomRecipe(random: () => number = Math.random): AvatarRecipe {
   const hairStyle = pick(
@@ -36,7 +56,8 @@ export function randomRecipe(random: () => number = Math.random): AvatarRecipe {
   );
   // Natural hair colors most of the time; the fun ones occasionally.
   const hairColor = pick(random, random() < 0.85 ? HAIR_COLORS.slice(0, 11) : HAIR_COLORS);
-  const top = pick(random, Top.options);
+  // Everyday tops: the formal ones are a choice, not a surprise.
+  const top = pick(random, CASUAL_TOPS);
   return {
     version: AVATAR_RECIPE_VERSION,
     body: { height: slider(random), build: slider(random) },

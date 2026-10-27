@@ -27,7 +27,8 @@ export const HairStyle = z.enum([
 ]);
 export type HairStyle = z.infer<typeof HairStyle>;
 export const FacialHair = z.enum(["none", "stubble", "mustache", "beard"]);
-export const Top = z.enum(["tee", "hoodie", "sweater", "dress"]);
+/** Tops; "tuxedo" and "suit" are the formal jackets (a dinner jacket with a bow tie, a suit). */
+export const Top = z.enum(["tee", "hoodie", "sweater", "dress", "tuxedo", "suit"]);
 export const Bottom = z.enum(["pants", "shorts", "skirt"]);
 export const Glasses = z.enum(["none", "round", "square"]);
 export const Hat = z.enum(["none", "beanie", "cap"]);
