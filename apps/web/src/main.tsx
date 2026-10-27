@@ -3,19 +3,22 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { CLERK_PUBLISHABLE_KEY, ClerkBridge } from "./components/AccountSignIn";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./styles.css";
 import "./ui.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {CLERK_PUBLISHABLE_KEY ? (
-      // Real accounts. Without a key the app falls back to the development sign-in.
-      <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl="/">
-        <ClerkBridge />
+    <ErrorBoundary>
+      {CLERK_PUBLISHABLE_KEY ? (
+        // Real accounts. Without a key the app falls back to the development sign-in.
+        <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl="/">
+          <ClerkBridge />
+          <App />
+        </ClerkProvider>
+      ) : (
         <App />
-      </ClerkProvider>
-    ) : (
-      <App />
-    )}
+      )}
+    </ErrorBoundary>
   </StrictMode>,
 );

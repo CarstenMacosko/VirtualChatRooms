@@ -1,9 +1,10 @@
-import { type FormEvent, lazy, Suspense, useEffect, useRef, useState } from "react";
+import { type FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import { type CaptureOptions, type RoomInfo, SCAN_FILE_PATTERN, type UpAxis } from "@vcr/protocol";
 import { api, ApiRequestError, uploadParts } from "../lib/api";
+import { lazyChunk } from "../lib/lazyChunk";
 import { builtInRoomBlurb } from "./ui";
 
-const RoomSetupEditor = lazy(() => import("../world/RoomSetupEditor"));
+const RoomSetupEditor = lazyChunk(() => import("../world/RoomSetupEditor"));
 
 /** Rooms whose owner has been offered the setup editor (once per room, per browser). */
 const SETUP_OFFERED_KEY = "vcr.setupOffered";

@@ -23,7 +23,7 @@ import {
   VideoOff,
   Volume2,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   PoseSender,
   builtInLayout,
@@ -43,6 +43,7 @@ import { api, ApiRequestError } from "../lib/api";
 import type { Device } from "../media/access";
 import { readDeviceProfile } from "../lib/device";
 import { useNow } from "../lib/hooks";
+import { lazyChunk } from "../lib/lazyChunk";
 import { useLive } from "../lib/live";
 import { type RealmStatus, useRealmSession } from "../lib/realm";
 import { SpatialAudio } from "../media/SpatialAudio";
@@ -53,13 +54,27 @@ import type { Autopilot } from "../world/World";
 import { Filmstrip, VideoStage } from "./CallTiles";
 import { AccessHelp, DeviceTrouble } from "./DeviceAccess";
 import { EMOTE_GLYPHS } from "./emotes";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { InvitePanel } from "./InvitePanel";
 import { DeviceSelect, type JoinChoice, PreJoin, rememberedDevices, useDevices } from "./PreJoin";
 import { type PanelTab, SidePanel } from "./SidePanel";
 import { builtInRoomBlurb, Dialog, elapsed } from "./ui";
 
 // Three.js, Spark, Rapier and three-vrm are large; load them only when entering the room view.
-const World = lazy(() => import("../world/World"));
+const World = lazyChunk(() => import("../world/World"));
+/** In place of the room view if it crashes, so the call itself carries on. */
+function roomCrashed(retry: () => void) {
+  return (
+    <div className="world-loading">
+      <div className="world-crashed">
+        <p>The room view stopped working. The call is still on.</p>
+        <button className="secondary" onClick={retry}>
+          Reload the room
+        </button>
+      </div>
+    </div>
+  );
+}
 const debug = new URLSearchParams(window.location.search).has("debug");
 const VIEW_KEY = "vcr.callView";
 
@@ -333,26 +348,28 @@ function InSession(props: SessionScreenProps & { choice: JoinChoice; audio: Spat
             {scene === undefined ? (
               <div className="world-loading">Loading room…</div>
             ) : (
-              <Suspense fallback={<div className="world-loading">Loading room…</div>}>
-                <World
-                  key={sceneRoom?.id}
-                  scene={scene}
-                  builtIn={sceneRoom?.builtIn ?? null}
-                  projector={projector}
-                  participants={realm.participants}
-                  selfId={realm.selfId}
-                  emotes={realm.emotes}
-                  now={now}
-                  poseHub={realm.poseHub}
-                  audio={audio}
-                  autopilotRef={autopilotRef}
-                  trackedFaceRef={face.faceRef}
-                  profile={profile}
-                  debug={debug}
-                  seating={seating}
-                  games={realm.games}
-                />
-              </Suspense>
+              <ErrorBoundary key={sceneRoom?.id} fallback={roomCrashed}>
+                <Suspense fallback={<div className="world-loading">Loading room…</div>}>
+                  <World
+                    key={sceneRoom?.id}
+                    scene={scene}
+                    builtIn={sceneRoom?.builtIn ?? null}
+                    projector={projector}
+                    participants={realm.participants}
+                    selfId={realm.selfId}
+                    emotes={realm.emotes}
+                    now={now}
+                    poseHub={realm.poseHub}
+                    audio={audio}
+                    autopilotRef={autopilotRef}
+                    trackedFaceRef={face.faceRef}
+                    profile={profile}
+                    debug={debug}
+                    seating={seating}
+                    games={realm.games}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             )}
             <Filmstrip
               participants={realm.participants}
