@@ -67,6 +67,8 @@ export async function buildApp(ctx: AppContext) {
     // /realm too, so a web app on another origin (Cloudflare Pages) can't join a call without it.
     // Sign-in is a bearer token, never a cookie, so this lets no ambient credentials in.
     credentials: true,
+    // Uploads read each part's ETag, which a browser hides from another origin unless exposed.
+    exposedHeaders: ["ETag"],
   });
   // The realm (Colyseus, forwarded at /realm) echoes back any origin, and CORS above lets refused
   // preflights through to it: turn away browsers from other sites here instead. Requests without

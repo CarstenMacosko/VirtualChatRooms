@@ -60,12 +60,15 @@ async function person(displayName: string) {
 }
 type Person = Awaited<ReturnType<typeof person>>;
 
+/** The web app may be on another origin (Cloudflare Pages), like this. */
+const WEB_ORIGIN = env.WEB_ORIGIN.split(",")[0]!.trim();
+
 const putPart = (url: string, body: Buffer) =>
   app.inject({
     method: "PUT",
     url,
     payload: body,
-    headers: { "content-type": "application/octet-stream" },
+    headers: { "content-type": "application/octet-stream", origin: WEB_ORIGIN },
   });
 
 /** Uploads `file` the way the web app does: create, PUT each part, complete. */
@@ -82,6 +85,8 @@ async function uploadScan(owner: Person, file: Buffer, fileName = "living-room.p
     const start = (part.partNumber - 1) * upload.partSize;
     const res = await putPart(part.url, file.subarray(start, start + upload.partSize));
     expect(res.statusCode).toBe(200);
+    // A browser on another origin can only read the ETag if it's exposed.
+    expect(String(res.headers["access-control-expose-headers"]).toLowerCase()).toContain("etag");
     parts.push({ partNumber: part.partNumber, etag: String(res.headers.etag) });
   }
   const done = await owner.call("POST", `/rooms/${room.id}/upload/complete`, { parts });
