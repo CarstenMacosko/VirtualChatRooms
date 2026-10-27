@@ -1,10 +1,9 @@
 import type { ManifestTransform, RoomManifest, Seat, Table, Walkway } from "@vcr/protocol";
 import type { Vec3 } from "../math";
-import { SAMPLE_ROOM } from "./sampleRoom";
 
 /**
- * What the runtime needs to know about the room it's in, whether it's the procedural sample
- * room or a scan described by a manifest (PLAN.md § 3.3).
+ * What the runtime needs to know about the room it's in, whether it's the built-in room or a scan
+ * described by a manifest (PLAN.md § 3.3).
  */
 export interface RoomLayout {
   bounds: { min: Vec3; max: Vec3 };
@@ -16,16 +15,9 @@ export interface RoomLayout {
   tables: Table[];
   /** Floor kept walkable through the collision mesh (world X/Z rectangles). */
   walkways: Walkway[];
+  /** How far apart people appear around a spawn point (x, z); scans promise less open floor. */
+  spawnSpread?: [number, number];
 }
-
-export const SAMPLE_ROOM_LAYOUT: RoomLayout = {
-  bounds: SAMPLE_ROOM.bounds,
-  spawnPoints: SAMPLE_ROOM.spawnPoints,
-  lighting: SAMPLE_ROOM.lighting,
-  seats: SAMPLE_ROOM.seats,
-  tables: SAMPLE_ROOM.tables,
-  walkways: [],
-};
 
 export function scannedRoomLayout(manifest: RoomManifest): RoomLayout {
   return {
@@ -46,7 +38,7 @@ export function spawnPointFor(id: string, layout: RoomLayout): { position: Vec3;
   let hash = 0;
   for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
   const base = layout.spawnPoints[Math.abs(hash >> 9) % layout.spawnPoints.length]!;
-  const spread = layout === SAMPLE_ROOM_LAYOUT ? [0.8, 0.6] : [0.35, 0.35];
+  const spread = layout.spawnSpread ?? [0.35, 0.35];
   const angle = ((Math.abs(hash) % 360) * Math.PI) / 180;
   return {
     position: [

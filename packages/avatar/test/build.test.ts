@@ -12,13 +12,14 @@ import {
   Top,
 } from "@vcr/protocol";
 import { buildAvatarVrm, FACE_TARGETS } from "../src/build";
-import { randomRecipe, recipeForSeed, seededRandom } from "../src/defaults";
+import { FORMAL_OUTFITS, randomRecipe, recipeForSeed, seededRandom } from "../src/defaults";
 
 interface Gltf {
   meshes: {
     name: string;
-    primitives: { targets?: unknown[]; attributes: { POSITION: number } }[];
+    primitives: { targets?: unknown[]; attributes: { POSITION: number }; material: number }[];
   }[];
+  materials: { name: string }[];
   accessors: { count: number }[];
   extensions: {
     VRMC_vrm: {
@@ -106,6 +107,36 @@ describe("buildAvatarVrm", () => {
     }
     manager.setValue("happy", 1);
     expect(() => vrm.update(1 / 60)).not.toThrow();
+  });
+});
+
+describe("formal outfits", () => {
+  /** Names of the materials the avatar's body actually uses. */
+  const used = (recipe: AvatarRecipe) => {
+    const gltf = readGltf(buildAvatarVrm(recipe));
+    const body = gltf.meshes.find((m) => m.name === "Body")!;
+    return new Set(body.primitives.map((p) => gltf.materials[p.material]!.name));
+  };
+
+  it("dresses a tuxedo with a shirt front, satin lapels and a bow tie", () => {
+    const tux = used({ ...base, outfit: FORMAL_OUTFITS.tuxedo });
+    expect([...tux]).toEqual(expect.arrayContaining(["Top", "Bottom", "Shirt", "Tie", "Lapel"]));
+    const suit = used({ ...base, outfit: FORMAL_OUTFITS.suit });
+    expect([...suit]).toEqual(expect.arrayContaining(["Top", "Bottom", "Shirt", "Tie"]));
+    expect(suit.has("Lapel")).toBe(false);
+    // Everyday clothes don't grow any of it.
+    const tee = used({ ...base, outfit: { ...base.outfit, top: "tee" } });
+    for (const name of ["Shirt", "Tie", "Lapel"]) expect(tee.has(name)).toBe(false);
+  });
+
+  it("are valid recipes, never handed out at random", () => {
+    for (const outfit of Object.values(FORMAL_OUTFITS)) {
+      expect(RecipeSchema.safeParse({ ...base, outfit }).success).toBe(true);
+    }
+    const random = seededRandom("formal");
+    for (let i = 0; i < 200; i++) {
+      expect(["tuxedo", "suit"]).not.toContain(randomRecipe(random).outfit.top);
+    }
   });
 });
 

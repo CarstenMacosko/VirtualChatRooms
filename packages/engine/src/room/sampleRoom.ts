@@ -3,9 +3,10 @@ import { mulberry32, type Vec3 } from "../math";
 import type { BoxCollider } from "../locomotion/physics";
 
 /**
- * A procedurally generated living room, built from simple shapes so every client produces the
- * exact same splats and the collision boxes match what you see. It stands in for a scanned room
- * until room capture lands (Phase 4) and keeps working offline.
+ * A procedurally generated living room, built from simple shapes so it produces the exact same
+ * splats every time and the collision boxes match them. It was the first built-in room; now (the
+ * Oval Office took its place) tests use it as a known room: a synthetic scan for the API's
+ * furniture detection, and physics with a step and seats for the engine's.
  */
 
 type Face = "+x" | "-x" | "+y" | "-y" | "+z" | "-z";

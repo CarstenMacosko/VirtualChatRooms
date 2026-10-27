@@ -16,10 +16,16 @@ export const SCAN_FILE_PATTERN = /\.(ply|spz|glb)$/i;
 export const RoomKind = z.enum(["sample", "scan"]);
 export type RoomKind = z.infer<typeof RoomKind>;
 
+/** The rooms that ship with the app, which every client draws itself. */
+export const BuiltInRoomId = z.enum(["oval-office", "presentation"]);
+export type BuiltInRoomId = z.infer<typeof BuiltInRoomId>;
+
 export const RoomSummary = z.object({
   id: z.string(),
   name: z.string(),
   kind: RoomKind,
+  /** Which built-in room a sample room is (null: a scan, or a server from before there were two). */
+  builtIn: BuiltInRoomId.nullable().default(null),
 });
 export type RoomSummary = z.infer<typeof RoomSummary>;
 

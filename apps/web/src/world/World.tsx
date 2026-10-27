@@ -5,6 +5,9 @@ import {
   autopilotStep,
   CameraRig,
   CHARACTER,
+  builtInLayout,
+  builtInRoom,
+  builtInRoomColliders,
   CharacterController,
   type DeviceProfile,
   emptyIntents,
@@ -19,8 +22,6 @@ import {
   rightFromYaw,
   roomClearances,
   type RoomLayout,
-  SAMPLE_ROOM_LAYOUT,
-  sampleRoomColliders,
   scannedRoomLayout,
   seatedCameraBody,
   spawnPointFor,
@@ -28,6 +29,7 @@ import {
 } from "@vcr/engine";
 import {
   type AvatarRecipe,
+  type BuiltInRoomId,
   LocoState,
   type ParticipantView,
   type Quat,
@@ -46,6 +48,7 @@ import { TableGamesHud } from "./games/TableGamesHud";
 import { TableGamesLayer } from "./games/TableGamesLayer";
 import { createTableGamesUi, useUi } from "./games/ui";
 import { headshotTargets } from "./headshots";
+import { BuiltInRoom, type ProjectorTrack } from "./BuiltInRoom";
 import { RoomMesh } from "./RoomMesh";
 import { type RoomLoadState, RoomSplats } from "./RoomSplats";
 import {
@@ -88,8 +91,12 @@ export interface WorldProps {
   /** Your face from the webcam while face tracking is on; null otherwise. */
   trackedFaceRef: RefObject<TrackedFace | null>;
   profile: DeviceProfile;
-  /** A scanned room's manifest and signed URLs; null for the built-in sample room. */
+  /** A scanned room's manifest and signed URLs; null for a built-in room. */
   scene: SceneAssets | null;
+  /** Which built-in room, when `scene` is null. */
+  builtIn: BuiltInRoomId | null;
+  /** The screen someone in the call is sharing, for the room's projector screen. */
+  projector: ProjectorTrack | null;
   debug: boolean;
   /** Seat claims through the realm (ADR 0020); without it you can still sit, unshared. */
   seating?: SeatingLink;
@@ -117,7 +124,7 @@ export default function World(props: WorldProps) {
 
   const self = props.participants.find((p) => p.id === props.selfId);
   const selfUserId = self?.userId;
-  const { poseHub, scene } = props;
+  const { poseHub, scene, builtIn } = props;
   // Read when the simulation is created; later changes go through setRecipe.
   const selfRecipe = useRef<AvatarRecipe | null>(null);
   useEffect(() => {
@@ -131,7 +138,7 @@ export default function World(props: WorldProps) {
     if (!selfUserId) return;
     let alive = true;
     let created: Sim | null = null;
-    Promise.all([PhysicsWorld.create(), loadColliders(scene)])
+    Promise.all([PhysicsWorld.create(), loadColliders(scene, builtIn)])
       .then(([physics, colliders]) => {
         if (!alive) return physics.dispose();
         created = createSim(
@@ -150,7 +157,7 @@ export default function World(props: WorldProps) {
       alive = false;
       if (created) disposeSim(created);
     };
-  }, [selfUserId, poseHub, scene]);
+  }, [selfUserId, poseHub, scene, builtIn]);
 
   // Game tables get a smooth play surface, with the scan kept out of it and the space above.
   const surfaces = useMemo(() => (sim ? playSurfaces(sim.layout.tables) : []), [sim]);
@@ -177,15 +184,16 @@ export default function World(props: WorldProps) {
           <hemisphereLight args={["#fff8ee", "#6b5a4a", 1.3]} />
           <ambientLight color={sim.layout.lighting.ambientColor} intensity={0.4} />
           <directionalLight position={[2, 4, 3]} intensity={1.2} />
-          {scene?.manifest.mesh ? (
-            <RoomMesh scene={scene} clearances={clearances} onState={setRoomState} />
-          ) : (
-            <RoomSplats
-              spacing={props.profile.splatSpacing}
-              scene={scene}
-              clearances={clearances}
+          {!scene ? (
+            <BuiltInRoom
+              room={builtInRoom(builtIn)}
+              projector={props.projector}
               onState={setRoomState}
             />
+          ) : scene.manifest.mesh ? (
+            <RoomMesh scene={scene} clearances={clearances} onState={setRoomState} />
+          ) : (
+            <RoomSplats scene={scene} clearances={clearances} onState={setRoomState} />
           )}
           <PlaySurfaces surfaces={surfaces} />
           <Simulation
@@ -279,17 +287,21 @@ export default function World(props: WorldProps) {
 }
 
 /**
- * The room's collision geometry: the sample room's boxes, or a scan's collision mesh (a GLB in
+ * The room's collision geometry: the built-in room's boxes, or a scan's collision mesh (a GLB in
  * the scan's file space) moved into the world by the manifest transform, with its walkways
  * opened up.
  */
 type Colliders = { layout: RoomLayout; add(physics: PhysicsWorld): void };
 
-async function loadColliders(scene: SceneAssets | null): Promise<Colliders> {
+async function loadColliders(
+  scene: SceneAssets | null,
+  builtIn: BuiltInRoomId | null,
+): Promise<Colliders> {
   if (!scene) {
+    const room = builtInRoom(builtIn);
     return {
-      layout: SAMPLE_ROOM_LAYOUT,
-      add: (physics) => sampleRoomColliders().forEach((box) => physics.addBox(box)),
+      layout: builtInLayout(builtIn),
+      add: (physics) => builtInRoomColliders(room).forEach((box) => physics.addBox(box)),
     };
   }
   const collision = await loadRoomCollision(scene);

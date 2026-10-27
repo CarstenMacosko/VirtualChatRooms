@@ -31,6 +31,7 @@ import {
 } from "../db/schema";
 import { type IdParams, isLocalRequest, parseBody, sendError } from "../http";
 import { acceptedContactIds } from "../social";
+import { roomSummary } from "../captures";
 import { avatarOf } from "./avatar";
 import { sceneAssets } from "./rooms";
 
@@ -437,7 +438,7 @@ export function sessionRoutes(app: FastifyInstance, ctx: Services) {
     const response: JoinSessionResponse = {
       sessionId: row.session.id,
       role: "guest",
-      room: { id: row.room.id, name: row.room.name, kind: row.room.kind },
+      room: roomSummary(row.room),
       scene: await sceneAssets(storage, row.room, row.session.id),
       realmTicket: await ticket({
         sub: `gst_${randomUUID()}`,

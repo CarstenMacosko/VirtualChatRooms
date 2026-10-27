@@ -6,6 +6,7 @@ import {
   ellipsoid,
   lerp,
   type Part,
+  patch,
   shapedSphere,
   type Shaper,
   torus,
@@ -39,7 +40,7 @@ export const FACE_TARGETS = [
 type FaceTarget = (typeof FACE_TARGETS)[number];
 
 /** Bumped when generated geometry changes, so caches of built avatars can tell versions apart. */
-export const GENERATOR_VERSION = 1;
+export const GENERATOR_VERSION = 2;
 
 export function buildAvatarVrm(recipe: AvatarRecipe): Uint8Array {
   const shape = new AvatarShape(recipe);
@@ -60,6 +61,9 @@ export function buildAvatarVrm(recipe: AvatarRecipe): Uint8Array {
     },
   });
 }
+
+const isJacket = (top: AvatarRecipe["outfit"]["top"]): top is "tuxedo" | "suit" =>
+  top === "tuxedo" || top === "suit";
 
 const FACE_FRONT = (n: V3) => n[2] > 0.42 && n[1] < 0.55;
 
@@ -143,6 +147,10 @@ class AvatarShape {
       { name: "Top", color: r.outfit.topColor, outline: true, doubleSided: true },
       { name: "Bottom", color: r.outfit.bottomColor, outline: true, doubleSided: true },
       { name: "Shoes", color: r.outfit.shoesColor, outline: true },
+      // The formal jackets: shirt front and cuffs, bow tie and buttons, satin lapels.
+      { name: "Shirt", color: "#f6f5f1", outline: true },
+      { name: "Tie", color: "#16141b", outline: true },
+      { name: "Lapel", color: mixHex(r.outfit.topColor, "#ffffff", 0.14) },
       { name: "Hat", color: r.hat.color, outline: true, doubleSided: true },
       { name: "Frame", color: "#26222b" },
       { name: "EyeWhite", color: "#fbfbfd", shade: "#d9d9e6" },
@@ -482,7 +490,8 @@ class AvatarShape {
   private torso(): Part[] {
     const w = this.wide;
     const { top } = this.r.outfit;
-    const bottom = top === "dress" ? "Top" : "Bottom";
+    // A dress, or a jacket's skirts, cover the hips.
+    const bottom = top === "dress" || isJacket(top) ? "Top" : "Bottom";
     const parts: Part[] = [
       shapedSphere("Top", "chest", ellipsoid([0, 1.2, 0], [0.158 * w, 0.17, 0.104 * w], 0.8)),
       shapedSphere("Top", "spine", ellipsoid([0, 1.04, 0], [0.152 * w, 0.15, 0.1 * w], 0.85)),
@@ -514,8 +523,94 @@ class AvatarShape {
     if (top === "sweater") {
       parts.push(torus("Top", "chest", [0, 1.355, 0], [0, 1, 0], 0.056, 0.014, [1, 0.95]));
     }
+    if (isJacket(top)) parts.push(...this.jacketFront(top));
     if (top === "dress") parts.push(this.skirt("Top", 0.5));
     else if (this.r.outfit.bottom === "skirt") parts.push(this.skirt("Bottom", 0.6));
+    return parts;
+  }
+
+  /**
+   * What makes a jacket formal: the shirt showing in the jacket's V, buttons, and for a tuxedo
+   * satin lapels and a bow tie. Thin shells laid just outside the chest.
+   */
+  private jacketFront(top: "tuxedo" | "suit"): Part[] {
+    const w = this.wide;
+    // The front of the torso (the chest and spine ellipsoids of `torso`) at (x, y).
+    const surface = (x: number, y: number, cy: number, r: V3, box: number) => {
+      const e = 2 / box;
+      const rest = 1 - Math.abs(x / r[0]) ** e - Math.abs((y - cy) / r[1]) ** e;
+      return rest > 0 ? r[2] * rest ** (1 / e) : 0;
+    };
+    const frontZ = (x: number, y: number) =>
+      Math.max(
+        surface(x, y, 1.2, [0.158 * w, 0.17, 0.104 * w], 0.8),
+        surface(x, y, 1.04, [0.152 * w, 0.15, 0.1 * w], 0.85),
+      );
+    // The jacket's V: from the collar down to its point above the buttons.
+    const [veeTop, veeBottom] = [1.35, 1.13];
+    const veeY = (u: number) => lerp(veeTop, veeBottom, u);
+    const veeHalf = (u: number) => lerp(0.06 * w, 0.003, u ** 0.9);
+    const parts: Part[] = [
+      patch("Shirt", "chest", 16, 6, (u, v) => {
+        const y = veeY(u);
+        const x = (2 * v - 1) * veeHalf(u);
+        return [x, y, frontZ(x, y) + 0.004];
+      }),
+    ];
+    // The bow tie sits on the collar.
+    const collarZ = frontZ(0, 1.345) + 0.004;
+    if (top === "tuxedo") {
+      // Satin lapels along both sides of the V.
+      for (const side of [1, -1]) {
+        parts.push(
+          patch("Lapel", "chest", 16, 3, (u, v) => {
+            const y = veeY(u);
+            const across = (side === 1 ? v : 1 - v) * lerp(0.032, 0.014, u) * w;
+            const x = side * (veeHalf(u) + across);
+            return [x, y, frontZ(x, y) + 0.0025];
+          }),
+        );
+      }
+      const bow = { rings: 8, segments: 12 };
+      for (const side of [1, -1]) {
+        parts.push(
+          shapedSphere(
+            "Tie",
+            "chest",
+            ellipsoid([side * 0.026, 1.345, collarZ + 0.012], [0.026, 0.017, 0.011]),
+            bow,
+          ),
+        );
+      }
+      parts.push(
+        shapedSphere(
+          "Tie",
+          "chest",
+          ellipsoid([0, 1.345, collarZ + 0.016], [0.01, 0.01, 0.009]),
+          bow,
+        ),
+        shapedSphere(
+          "Tie",
+          "spine",
+          ellipsoid([0, 1.07, frontZ(0, 1.07) + 0.002], [0.009, 0.009, 0.006]),
+          bow,
+        ),
+      );
+    } else {
+      for (const y of [1.1, 1.0]) {
+        parts.push(
+          shapedSphere(
+            "Tie",
+            "spine",
+            ellipsoid([0, y, frontZ(0, y) + 0.002], [0.009, 0.009, 0.006]),
+            {
+              rings: 8,
+              segments: 12,
+            },
+          ),
+        );
+      }
+    }
     return parts;
   }
 
@@ -537,7 +632,8 @@ class AvatarShape {
     const x = (v: number) => v * side;
     const sx = this.shoulderX;
     const thick = Math.sqrt(this.wide);
-    const longSleeves = this.r.outfit.top === "hoodie" || this.r.outfit.top === "sweater";
+    const { top } = this.r.outfit;
+    const longSleeves = top === "hoodie" || top === "sweater" || isJacket(top);
     const y = 1.3;
     const parts: Part[] = [
       capsule(
@@ -566,6 +662,12 @@ class AvatarShape {
         },
       ),
     ];
+    if (isJacket(top)) {
+      // Shirt cuffs peeking out of the jacket sleeves.
+      parts.push(
+        torus("Shirt", `${s}LowerArm`, [x(sx + 0.398), y, 0], [1, 0, 0], 0.041 * thick, 0.007),
+      );
+    }
     if (!longSleeves) {
       parts.push(
         capsule(

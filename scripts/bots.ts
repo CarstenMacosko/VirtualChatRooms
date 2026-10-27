@@ -8,7 +8,7 @@
  *   pnpm bots 10 <guest link> 300   # a specific gathering (Invite → Copy guest link)
  */
 import { Client, type Room } from "@colyseus/sdk";
-import { PoseSender, SAMPLE_ROOM } from "@vcr/engine";
+import { OVAL_OFFICE, PoseSender } from "@vcr/engine";
 import {
   GuestLinkInfo,
   GuestLinkResponse,
@@ -49,11 +49,11 @@ if (!guestToken) {
 }
 const REALM = process.env.BOTS_REALM_URL ?? "ws://127.0.0.1:2567";
 
-// Open floor areas of the sample room (avoiding furniture), as [minX, maxX, minZ, maxZ].
+// Open floor areas of the built-in room (avoiding furniture), as [minX, maxX, minZ, maxZ].
 const WALKABLE: [number, number, number, number][] = [
-  [-1.6, 3.2, 0.3, 2.5],
-  [1.4, 3.2, -1.6, 0.5],
-  [-1.8, -0.6, -1.4, 0.3],
+  [-2.2, 2.2, 0.9, 2.5],
+  [-3.2, -2.0, -2.5, 1.5],
+  [2.0, 3.2, -2.5, 1.5],
 ];
 
 function randomPoint(): [number, number, number] {
@@ -99,7 +99,7 @@ async function startBot(i: number): Promise<Bot> {
     room,
     sender: new PoseSender((bytes) => room.sendBytes(RealmMessage.pose, bytes)),
     position,
-    yaw: SAMPLE_ROOM.spawnPoints[0]!.yaw,
+    yaw: OVAL_OFFICE.spawnPoints[0]!.yaw,
     target: randomPoint(),
     speed: Math.random() < 0.3 ? 3.5 : 1.5,
     pauseUntil: 0,

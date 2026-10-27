@@ -1,9 +1,17 @@
 import { Check, Copy, Share2, X } from "lucide-react";
 import QRCode from "qrcode";
 import { type ReactNode, useEffect, useState } from "react";
+import type { BuiltInRoomId } from "@vcr/protocol";
 import { colorFor } from "./emotes";
 
 /** Small shared pieces of the portal and call screens. */
+
+/** A line about a built-in room for room lists. */
+export function builtInRoomBlurb(id: BuiltInRoomId | null): string {
+  return id === "presentation"
+    ? "Built-in · a projector screen, standing desks and seats for 26"
+    : "Built-in · sofas, a desk and a puzzle table";
+}
 
 const initials = (name: string) =>
   name

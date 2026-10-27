@@ -150,6 +150,33 @@ export function capsule(
   return withNormals({ material, bone, positions, indices, normals: [], morphs: new Map() });
 }
 
+/**
+ * A surface patch: a `rows` × `cols` grid placed by `at(u, v)` (both 0…1). With u running down
+ * and v running toward +X, it faces +Z: shirt fronts and lapels laid onto the chest.
+ */
+export function patch(
+  material: string,
+  bone: string,
+  rows: number,
+  cols: number,
+  at: (u: number, v: number) => V3,
+): Part {
+  const positions: number[] = [];
+  for (let i = 0; i <= rows; i++) {
+    for (let j = 0; j <= cols; j++) positions.push(...at(i / rows, j / cols));
+  }
+  const indices: number[] = [];
+  const row = cols + 1;
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      const a = i * row + j;
+      const b = a + row;
+      indices.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  }
+  return withNormals({ material, bone, positions, indices, normals: [], morphs: new Map() });
+}
+
 /** A ring (glasses frames, collars), lying in the plane perpendicular to `normal`. */
 export function torus(
   material: string,

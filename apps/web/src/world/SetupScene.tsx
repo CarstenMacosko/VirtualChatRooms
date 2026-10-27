@@ -182,12 +182,7 @@ export function SetupScene(props: SetupSceneProps) {
           <RoomMesh scene={scene} clearances={NO_CLEARANCES} onState={props.onRoomState} />
         ) : (
           <>
-            <RoomSplats
-              spacing={0.05}
-              scene={scene}
-              clearances={NO_CLEARANCES}
-              onState={props.onRoomState}
-            />
+            <RoomSplats scene={scene} clearances={NO_CLEARANCES} onState={props.onRoomState} />
             <CeilingCut height={manifest.bounds.max[1] - 0.3} />
           </>
         )}
