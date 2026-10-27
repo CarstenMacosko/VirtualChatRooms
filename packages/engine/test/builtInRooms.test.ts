@@ -1,3 +1,5 @@
+// Reads the exported room models from disk (Node APIs, in this test only).
+/// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
