@@ -16,6 +16,8 @@ import {
   OVAL_OFFICE,
   type Picture,
   type RoomPart,
+  SCREEN_BORDER,
+  SCREEN_DEPTH,
   type ScreenPart,
 } from "@vcr/engine";
 import type { RoomLoadState } from "./RoomSplats";
@@ -42,7 +44,7 @@ export function BuiltInRoom({
     <group>
       {room.parts.map((part, i) =>
         part.kind === "screen" ? (
-          <Screen key={i} part={part} track={projector} />
+          <ProjectorScreen key={i} screen={part} track={projector} />
         ) : (
           <Part key={i} part={part} />
         ),
@@ -229,7 +231,19 @@ function useScreenTexture(track: ProjectorTrack | null) {
   return screen;
 }
 
-function Screen({ part, track }: { part: ScreenPart; track: ProjectorTrack | null }) {
+/**
+ * A projector screen showing `track` (or a hint to share), facing `yaw`. `bezel` adds a frame
+ * reaching back into the wall, as deep as the scan is cleared behind it (`screenClearance`).
+ */
+export function ProjectorScreen({
+  screen: part,
+  track,
+  bezel = false,
+}: {
+  screen: Pick<ScreenPart, "center" | "size" | "yaw">;
+  track: ProjectorTrack | null;
+  bezel?: boolean;
+}) {
   const screen = useScreenTexture(track);
   const idle = useMemo(() => idleScreenTexture(track ? "loading" : "idle"), [track]);
   const [w, h] = part.size;
@@ -241,6 +255,12 @@ function Screen({ part, track }: { part: ScreenPart; track: ProjectorTrack | nul
     : [w, h];
   return (
     <group position={part.center} rotation-y={part.yaw}>
+      {bezel && (
+        <mesh position={[0, 0, -SCREEN_DEPTH / 2 - 0.002]}>
+          <boxGeometry args={[w + 2 * SCREEN_BORDER, h + 2 * SCREEN_BORDER, SCREEN_DEPTH]} />
+          <meshStandardMaterial color="#15181d" roughness={0.5} metalness={0.3} />
+        </mesh>
+      )}
       <mesh>
         <planeGeometry args={part.size} />
         {/* Separate materials (keys): one material switching between them keeps a stale shader. */}

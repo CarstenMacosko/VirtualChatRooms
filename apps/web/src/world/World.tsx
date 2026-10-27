@@ -48,7 +48,7 @@ import { TableGamesHud } from "./games/TableGamesHud";
 import { TableGamesLayer } from "./games/TableGamesLayer";
 import { createTableGamesUi, useUi } from "./games/ui";
 import { headshotTargets } from "./headshots";
-import { BuiltInRoom, type ProjectorTrack } from "./BuiltInRoom";
+import { BuiltInRoom, ProjectorScreen, type ProjectorTrack } from "./BuiltInRoom";
 import { RoomMesh } from "./RoomMesh";
 import { type RoomLoadState, RoomSplats } from "./RoomSplats";
 import {
@@ -196,6 +196,9 @@ export default function World(props: WorldProps) {
             <RoomSplats scene={scene} clearances={clearances} onState={setRoomState} />
           )}
           <PlaySurfaces surfaces={surfaces} />
+          {sim.layout.screens?.map((s) => (
+            <ProjectorScreen key={s.id} screen={s} track={props.projector} bezel />
+          ))}
           <Simulation
             sim={sim}
             input={input}

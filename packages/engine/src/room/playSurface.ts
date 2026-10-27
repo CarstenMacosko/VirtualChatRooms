@@ -1,4 +1,4 @@
-import type { Table } from "@vcr/protocol";
+import type { Screen, Table } from "@vcr/protocol";
 import type { Vec3 } from "../math";
 
 /**
@@ -70,9 +70,41 @@ export function surfaceClearance(s: PlaySurface): Clearance {
   };
 }
 
+/** A screen's bezel reaches this far behind its face, into the (bumpy) wall it hangs on. */
+export const SCREEN_DEPTH = 0.08;
+/** …and past its edges by this much. */
+export const SCREEN_BORDER = 0.04;
+
+/**
+ * The box hidden behind a projector screen: as deep as its bezel, so a bumpy scanned wall never
+ * pokes through the picture, with a sliver in front for good measure.
+ */
+export function screenClearance(screen: Pick<Screen, "center" | "yaw" | "size">): Clearance {
+  const back = SCREEN_DEPTH;
+  const front = 0.02;
+  // Along the screen's facing (sin yaw, cos yaw), centered between back and front.
+  const shift = (front - back) / 2;
+  const [x, y, z] = screen.center;
+  return {
+    center: [x + Math.sin(screen.yaw) * shift, y, z + Math.cos(screen.yaw) * shift],
+    yaw: screen.yaw,
+    half: [
+      screen.size[0] / 2 + SCREEN_BORDER,
+      screen.size[1] / 2 + SCREEN_BORDER,
+      (back + front) / 2,
+    ],
+  };
+}
+
 /** Every box the room renderers hide the scan in. */
-export function roomClearances(room: { tables: readonly Table[] }): Clearance[] {
-  return playSurfaces(room.tables).map(surfaceClearance);
+export function roomClearances(room: {
+  tables: readonly Table[];
+  screens?: readonly Screen[];
+}): Clearance[] {
+  return [
+    ...playSurfaces(room.tables).map(surfaceClearance),
+    ...(room.screens ?? []).map(screenClearance),
+  ];
 }
 
 /** Whether a world point is inside a clearance (for tests and anything not on the GPU). */

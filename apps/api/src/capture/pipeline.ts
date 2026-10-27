@@ -188,6 +188,7 @@ export async function rescaleRoom(
   const manifest = parseRoomManifest(JSON.parse((await storage.get(manifestKey)).toString("utf8")));
   const k = heightMeters / (manifest.bounds.max[1] || 1);
   const scale = (v: [number, number, number]) => v.map((c) => c * k) as [number, number, number];
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
   const next: RoomManifest = {
     ...manifest,
     transform: {
@@ -208,6 +209,11 @@ export async function rescaleRoom(
       ...t,
       center: scale(t.center),
       size: [t.size[0] * k, t.size[1] * k],
+    })),
+    screens: manifest.screens.map((s) => ({
+      ...s,
+      center: scale(s.center),
+      size: [clamp(s.size[0] * k, 0.3, 8), clamp(s.size[1] * k, 0.2, 5)],
     })),
   };
   await storage.put(manifestKey, JSON.stringify(next), "application/json");

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RoomManifest, ScaleSource, Seat, Table, Walkway } from "./manifest";
+import { RoomManifest, ScaleSource, Screen, Seat, Table, Walkway } from "./manifest";
 
 /**
  * Rooms and room capture (PLAN.md § 4.1). Phase 4's first slice imports a scan people already
@@ -144,6 +144,7 @@ export const RoomSetup = z
     walkways: z.array(Walkway).max(64),
     seats: z.array(Seat).max(200),
     tables: z.array(Table).max(16),
+    screens: z.array(Screen).max(4).default([]),
   })
   .refine((s) => new Set(s.seats.map((x) => x.id)).size === s.seats.length, {
     message: "Two seats have the same id.",
@@ -153,6 +154,9 @@ export const RoomSetup = z
   })
   .refine((s) => new Set(s.walkways.map((x) => x.id)).size === s.walkways.length, {
     message: "Two walkways have the same id.",
+  })
+  .refine((s) => new Set(s.screens.map((x) => x.id)).size === s.screens.length, {
+    message: "Two screens have the same id.",
   });
 export type RoomSetup = z.infer<typeof RoomSetup>;
 export type RoomSetupInput = z.input<typeof RoomSetup>;

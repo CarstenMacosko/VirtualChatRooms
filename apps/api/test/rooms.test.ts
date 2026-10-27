@@ -332,6 +332,7 @@ describe("room scans", () => {
       walkways: [{ id: "door", min: [-0.5, 1], max: [0.5, 2.5] }],
       seats: [{ id: 1, position: [1, 0.45, -2], yaw: 0, height: 0.45, kind: "sofa" }],
       tables: [{ id: "t1", center: [0, 0.42, 0], yaw: 0.3, size: [0.9, 0.6], games: ["jigsaw"] }],
+      screens: [{ id: "p1", center: [0, 1.5, -2], yaw: 0, size: [2, 1.125] }],
     };
     const saved = await owner.call("PUT", `/rooms/${ready.id}/setup`, setup);
     expect(saved.statusCode).toBe(200);
@@ -339,12 +340,23 @@ describe("room scans", () => {
     const after = SceneAssets.parse((await owner.call("GET", `/rooms/${ready.id}/scene`)).json());
     expect(after.manifest.walkways).toEqual(setup.walkways);
     expect(after.manifest.tables[0]).toMatchObject({ id: "t1", games: ["jigsaw"], name: "" });
+    expect(after.manifest.screens).toEqual(setup.screens);
+    // A client from before screens existed saves without them (and clears them).
+    const { screens: _, ...older } = setup;
+    expect(
+      RoomSetup.parse((await owner.call("PUT", `/rooms/${ready.id}/setup`, older)).json()).screens,
+    ).toEqual([]);
+    expect((await owner.call("PUT", `/rooms/${ready.id}/setup`, setup)).statusCode).toBe(200);
 
     // Outside the room, duplicate ids, backwards rectangles, other people: all refused.
     const far = { ...setup, tables: [{ ...setup.tables[0], center: [40, 0.4, 0] }] };
     expect((await owner.call("PUT", `/rooms/${ready.id}/setup`, far)).statusCode).toBe(400);
     const twice = { ...setup, seats: [setup.seats[0], setup.seats[0]] };
     expect((await owner.call("PUT", `/rooms/${ready.id}/setup`, twice)).statusCode).toBe(400);
+    const farScreen = { ...setup, screens: [{ ...setup.screens[0], center: [0, 1.5, 40] }] };
+    expect((await owner.call("PUT", `/rooms/${ready.id}/setup`, farScreen)).statusCode).toBe(400);
+    const tiny = { ...setup, screens: [{ ...setup.screens[0], size: [0.1, 0.1] }] };
+    expect((await owner.call("PUT", `/rooms/${ready.id}/setup`, tiny)).statusCode).toBe(400);
     const backwards = { ...setup, walkways: [{ id: "w", min: [1, 1], max: [0, 2] }] };
     expect((await owner.call("PUT", `/rooms/${ready.id}/setup`, backwards)).statusCode).toBe(400);
     const stranger = await person("Setup Stranger");
@@ -368,6 +380,7 @@ describe("room scans", () => {
     expect(after.tables[0]!.size[0]).toBeCloseTo(before.tables[0]!.size[0] * k, 5);
     expect(after.walkways[0]!.max[1]).toBeCloseTo(before.walkways[0]!.max[1] * k, 5);
     expect(after.seats[0]!.height).toBeCloseTo(before.seats[0]!.height * k, 5);
+    expect(after.screens[0]!.center[1]).toBeCloseTo(before.screens[0]!.center[1] * k, 5);
     expect((await owner.call("PATCH", `/rooms/${ready.id}`, {})).statusCode).toBe(400);
   });
 

@@ -4,6 +4,7 @@ import {
   Footprints,
   Map as MapIcon,
   MousePointer2,
+  Presentation,
   RectangleHorizontal,
   RotateCcw,
   RotateCw,
@@ -14,11 +15,12 @@ import {
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { turnYaw } from "@vcr/engine";
-import type { RoomSetup, SceneAssets, Seat, Table, Walkway } from "@vcr/protocol";
+import type { RoomSetup, SceneAssets, Screen, Seat, Table, Walkway } from "@vcr/protocol";
 import { api, ApiRequestError } from "../lib/api";
 import { loadRoomCollision, type RoomCollision } from "./collision";
 import type { RoomLoadState } from "./RoomSplats";
 import {
+  editScreen,
   editSeat,
   editTable,
   editWalkway,
@@ -30,7 +32,7 @@ import {
 
 /**
  * The room's owner sets up a scanned room here: walkways through scan clutter, seats on couches
- * and chairs, and tables for games. Saved to the manifest; gatherings pick it up when people
+ * and chairs, tables for games, and projector screens. Saved to the manifest; gatherings pick it up when people
  * (re)join.
  */
 
@@ -39,7 +41,7 @@ const TOOLS: Array<{ id: Tool; label: string; icon: ReactNode; hint: string }> =
     id: "select",
     label: "Select",
     icon: <MousePointer2 size={18} />,
-    hint: "Tap a seat, table or walkway to change it. Drag to look around.",
+    hint: "Tap a seat, table, screen or walkway to change it. Drag to look around.",
   },
   {
     id: "walkway",
@@ -65,6 +67,12 @@ const TOOLS: Array<{ id: Tool; label: string; icon: ReactNode; hint: string }> =
     icon: <RectangleHorizontal size={18} />,
     hint: "Tap a tabletop to add a table people can play games at.",
   },
+  {
+    id: "screen",
+    label: "Screen",
+    icon: <Presentation size={18} />,
+    hint: "Tap a wall to hang a projector screen there. It shows whatever someone in the call is sharing.",
+  },
 ];
 
 const SEAT_KINDS: Array<{ id: Seat["kind"]; label: string }> = [
@@ -82,6 +90,7 @@ const setupOf = (scene: SceneAssets): RoomSetup => ({
   walkways: scene.manifest.walkways,
   seats: scene.manifest.seats,
   tables: scene.manifest.tables,
+  screens: scene.manifest.screens,
 });
 
 export default function RoomSetupEditor(props: {
@@ -193,6 +202,8 @@ export default function RoomSetupEditor(props: {
     selected?.kind === "table" ? setup?.tables.find((t) => t.id === selected.id) : undefined;
   const walkway =
     selected?.kind === "walkway" ? setup?.walkways.find((w) => w.id === selected.id) : undefined;
+  const screen =
+    selected?.kind === "screen" ? setup?.screens.find((s) => s.id === selected.id) : undefined;
   const suggestions = setup
     ? setup.seats.filter((s) => s.source === "auto").length +
       setup.tables.filter((t) => t.source === "auto").length
@@ -205,7 +216,9 @@ export default function RoomSetupEditor(props: {
       <header className="setup-top">
         <div className="setup-title">
           <b>Set up {room.name}</b>
-          <span className="muted">{dirty ? "Unsaved changes" : "Seats, tables and walkways"}</span>
+          <span className="muted">
+            {dirty ? "Unsaved changes" : "Seats, tables, walkways and screens"}
+          </span>
         </div>
         <button
           className={`toggle${topView ? " on" : ""}`}
@@ -294,6 +307,13 @@ export default function RoomSetupEditor(props: {
               table={table}
               onEdit={(patch) => edit(editTable(table.id, patch))}
               onRemove={() => remove({ kind: "table", id: table.id })}
+            />
+          )}
+          {screen && (
+            <ScreenPanel
+              screen={screen}
+              onEdit={(patch) => edit(editScreen(screen.id, patch))}
+              onRemove={() => remove({ kind: "screen", id: screen.id })}
             />
           )}
           {walkway && (
@@ -523,6 +543,46 @@ function TablePanel(props: {
   );
 }
 
+function ScreenPanel(props: {
+  screen: Screen;
+  onEdit(patch: Partial<Screen>): void;
+  onRemove(): void;
+}) {
+  const { screen, onEdit } = props;
+  const [w, h] = screen.size;
+  const [x, y, z] = screen.center;
+  // The picture stays 16:9; its bottom edge stays where it is when it grows.
+  const setWidth = (width: number) => {
+    if (width < 0.3 || width > 8) return;
+    const height = Math.round(((width * 9) / 16) * 1000) / 1000;
+    onEdit({ size: [width, height], center: [x, y - h / 2 + height / 2, z] });
+  };
+  const bottom = Math.round((y - h / 2) * 100) / 100;
+  return (
+    <section className="setup-inspector">
+      <h3>Projector screen</h3>
+      <div className="setup-fields">
+        <NumberField label="Width (m)" value={w} min={0.3} max={8} onChange={setWidth} />
+        <NumberField
+          label="Off the floor (m)"
+          value={bottom}
+          min={0}
+          max={5}
+          onChange={(v) => v >= 0 && v <= 5 && onEdit({ center: [x, v + h / 2, z] })}
+        />
+      </div>
+      <Turn label="Faces" yaw={screen.yaw} onTurn={(yaw) => onEdit({ yaw })} />
+      <p className="hint">
+        Shows the newest screen anyone in the call shares, for everyone in the room. To move it,
+        delete it and tap the wall where you want it with the Screen tool.
+      </p>
+      <button className="danger small" onClick={props.onRemove}>
+        <Trash size={16} /> Delete screen
+      </button>
+    </section>
+  );
+}
+
 function WalkwayPanel(props: {
   walkway: Walkway;
   onEdit(patch: Partial<Walkway>): void;
@@ -555,12 +615,12 @@ function WalkwayPanel(props: {
 
 /** Everything placed so far, for picking things that are hard to tap in the room. */
 function ItemList(props: { setup: RoomSetup; onSelect(sel: Selection): void }) {
-  const { walkways, seats, tables } = props.setup;
-  if (!walkways.length && !seats.length && !tables.length) {
+  const { walkways, seats, tables, screens } = props.setup;
+  if (!walkways.length && !seats.length && !tables.length && !screens.length) {
     return (
       <p className="muted">
         Nothing set up yet. Pick a tool below the room view (or on top, on a phone) to add seats,
-        tables and walkways.
+        tables, walkways and projector screens.
       </p>
     );
   }
@@ -581,6 +641,13 @@ function ItemList(props: { setup: RoomSetup; onSelect(sel: Selection): void }) {
             <RectangleHorizontal size={16} /> {t.name || "Table"}
             {t.games.includes("jigsaw") && " · jigsaw"}
             {t.source === "auto" && " · suggested"}
+          </button>
+        </li>
+      ))}
+      {screens.map((s, i) => (
+        <li key={`p${s.id}`}>
+          <button className="link" onClick={() => props.onSelect({ kind: "screen", id: s.id })}>
+            <Presentation size={16} /> Screen {i + 1} · {s.size[0].toFixed(1)} m wide
           </button>
         </li>
       ))}
