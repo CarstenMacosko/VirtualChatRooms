@@ -12,12 +12,6 @@ export interface CameraFocus {
   view(follow: CameraPose, dt: number): CameraPose | null;
 }
 
-/**
- * Games draw this far above the manifest's tabletop: a scan's surface is fuzzy (splats spread a
- * centimeter or so either side of it), and pieces sunk into it would be hidden.
- */
-export const TABLETOP_CLEARANCE = 0.012;
-
 /** How far the camera looks down at the table (radians above horizontal). */
 const PITCH = 1.12;
 const BLEND_SECONDS = 0.6;

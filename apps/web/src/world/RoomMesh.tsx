@@ -1,5 +1,5 @@
 import { useThree } from "@react-three/fiber";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Euler,
   Group,
@@ -12,7 +12,7 @@ import {
   Vector3,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { type Clearance, tableClearances } from "@vcr/engine";
+import type { Clearance } from "@vcr/engine";
 import type { SceneAssets } from "@vcr/protocol";
 import { assetUrl } from "../lib/api";
 import type { RoomLoadState } from "./RoomSplats";
@@ -20,12 +20,26 @@ import type { RoomLoadState } from "./RoomSplats";
 /**
  * Renders a textured mesh room (a photogrammetry scan's GLB) the way the phone showed it: unlit,
  * because the scan's photos already hold the room's light, and without tone mapping, so the
- * colors aren't shifted. Placed in the world by the manifest's transform, like splats.
+ * colors aren't shifted. Placed in the world by the manifest's transform, like splats. Surfaces
+ * inside `clearances` are hidden (see `roomClearances`).
  */
-export function RoomMesh(props: { scene: SceneAssets; onState?: (state: RoomLoadState) => void }) {
+export function RoomMesh(props: {
+  scene: SceneAssets;
+  clearances: readonly Clearance[];
+  onState?: (state: RoomLoadState) => void;
+}) {
   const gl = useThree((s) => s.gl);
-  const { scene, onState } = props;
+  const { scene, clearances, onState } = props;
   const [root, setRoot] = useState<Group | null>(null);
+  // Shared by every material, so the boxes can change without reloading the room.
+  const clear = useMemo<ClearUniforms>(
+    () => ({
+      vcrClear: { value: Array.from({ length: MAX_CLEARANCES }, () => new Matrix4()) },
+      vcrClearCount: { value: 0 },
+    }),
+    [],
+  );
+  useEffect(() => setClearances(clear, clearances), [clear, clearances]);
 
   useEffect(() => {
     const { mesh, transform } = scene.manifest;
@@ -37,7 +51,6 @@ export function RoomMesh(props: { scene: SceneAssets; onState?: (state: RoomLoad
     let cancelled = false;
     let loaded: Group | null = null;
     const anisotropy = gl.capabilities.getMaxAnisotropy();
-    const hide = clearanceMatrices(tableClearances(scene.manifest.tables));
     new GLTFLoader().load(
       assetUrl(url),
       (gltf) => {
@@ -50,8 +63,8 @@ export function RoomMesh(props: { scene: SceneAssets; onState?: (state: RoomLoad
           const m = o as Mesh;
           if (!m.isMesh) return;
           m.material = Array.isArray(m.material)
-            ? m.material.map((x) => unlit(x, anisotropy, hide))
-            : unlit(m.material, anisotropy, hide);
+            ? m.material.map((x) => unlit(x, anisotropy, clear))
+            : unlit(m.material, anisotropy, clear);
         });
         group.add(gltf.scene);
         loaded = group;
@@ -71,37 +84,37 @@ export function RoomMesh(props: { scene: SceneAssets; onState?: (state: RoomLoad
       if (loaded) dispose(loaded);
       setRoot(null);
     };
-  }, [scene, onState, gl]);
+  }, [scene, onState, gl, clear]);
 
   return root ? <primitive object={root} /> : null;
 }
 
-/** At most this many game tables have their clutter hidden. */
+/** At most this many boxes hide the scan; past that, the rest are ignored. */
 const MAX_CLEARANCES = 16;
 
-/** World → each clearance's unit cube (|x|, |y|, |z| ≤ 1 inside). */
-function clearanceMatrices(clearances: Clearance[]): Matrix4[] {
-  return clearances
-    .slice(0, MAX_CLEARANCES)
-    .map((c) =>
-      new Matrix4()
-        .compose(
-          new Vector3(...c.center),
-          new Quaternion().setFromEuler(new Euler(0, c.yaw, 0)),
-          new Vector3(...c.half),
-        )
-        .invert(),
-    );
+/** World → each clearance's unit cube (|x|, |y|, |z| ≤ 1 inside), and how many are in use. */
+interface ClearUniforms {
+  vcrClear: { value: Matrix4[] };
+  vcrClearCount: { value: number };
 }
 
-/** Discards the scan's surfaces inside the clearance boxes over game tables. */
-function hideInside(material: MeshBasicMaterial, boxes: Matrix4[]) {
-  if (!boxes.length) return;
-  const padded = [...boxes];
-  while (padded.length < MAX_CLEARANCES) padded.push(new Matrix4());
+function setClearances(uniforms: ClearUniforms, clearances: readonly Clearance[]) {
+  const used = clearances.slice(0, MAX_CLEARANCES);
+  used.forEach((c, i) =>
+    uniforms.vcrClear.value[i]!.compose(
+      new Vector3(...c.center),
+      new Quaternion().setFromEuler(new Euler(0, c.yaw, 0)),
+      new Vector3(...c.half),
+    ).invert(),
+  );
+  uniforms.vcrClearCount.value = used.length;
+}
+
+/** Discards the scan's surfaces inside the clearance boxes. */
+function hideInside(material: MeshBasicMaterial, uniforms: ClearUniforms) {
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.vcrClear = { value: padded };
-    shader.uniforms.vcrClearCount = { value: boxes.length };
+    shader.uniforms.vcrClear = uniforms.vcrClear;
+    shader.uniforms.vcrClearCount = uniforms.vcrClearCount;
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vcrWorld;")
       .replace(
@@ -129,7 +142,7 @@ uniform int vcrClearCount;`,
 }
 
 /** The material's texture and colors, without lighting or tone mapping. */
-function unlit(material: Material, anisotropy: number, hide: Matrix4[]): Material {
+function unlit(material: Material, anisotropy: number, hide: ClearUniforms): Material {
   const lit = material as MeshStandardMaterial;
   if (lit.map) lit.map.anisotropy = anisotropy;
   const basic =

@@ -13,9 +13,11 @@ import {
   lerp,
   PHYSICS_DT,
   PhysicsWorld,
+  playSurfaces,
   type PoseHub,
   PoseSender,
   rightFromYaw,
+  roomClearances,
   type RoomLayout,
   SAMPLE_ROOM_LAYOUT,
   sampleRoomColliders,
@@ -55,6 +57,7 @@ import {
   type SeatPrompt,
   SeatPromptView,
 } from "./sitting";
+import { PlaySurfaces } from "./PlaySurfaces";
 import { TouchControls } from "./TouchControls";
 
 export interface Autopilot {
@@ -149,6 +152,10 @@ export default function World(props: WorldProps) {
     };
   }, [selfUserId, poseHub, scene]);
 
+  // Game tables get a smooth play surface, with the scan kept out of it and the space above.
+  const surfaces = useMemo(() => (sim ? playSurfaces(sim.layout.tables) : []), [sim]);
+  const clearances = useMemo(() => (sim ? roomClearances(sim.layout) : []), [sim]);
+
   const attachInput = useCallback(
     (el: HTMLDivElement | null) => {
       if (!el) return;
@@ -171,10 +178,16 @@ export default function World(props: WorldProps) {
           <ambientLight color={sim.layout.lighting.ambientColor} intensity={0.4} />
           <directionalLight position={[2, 4, 3]} intensity={1.2} />
           {scene?.manifest.mesh ? (
-            <RoomMesh scene={scene} onState={setRoomState} />
+            <RoomMesh scene={scene} clearances={clearances} onState={setRoomState} />
           ) : (
-            <RoomSplats spacing={props.profile.splatSpacing} scene={scene} onState={setRoomState} />
+            <RoomSplats
+              spacing={props.profile.splatSpacing}
+              scene={scene}
+              clearances={clearances}
+              onState={setRoomState}
+            />
           )}
+          <PlaySurfaces surfaces={surfaces} />
           <Simulation
             sim={sim}
             input={input}

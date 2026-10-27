@@ -10,7 +10,7 @@ import {
 import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { Color, Quaternion, Vector3 } from "three";
-import { buildSampleRoomSplats, tableClearances } from "@vcr/engine";
+import { buildSampleRoomSplats, type Clearance } from "@vcr/engine";
 import type { SceneAssets } from "@vcr/protocol";
 import { assetUrl } from "../lib/api";
 
@@ -21,16 +21,18 @@ export type RoomLoadState =
 
 /**
  * Renders the room's Gaussian splats with Spark: the procedural sample room, or a scanned room
- * loaded from its signed URL and placed in the world by the manifest's transform.
+ * loaded from its signed URL and placed in the world by the manifest's transform. Splats inside
+ * `clearances` are hidden (see `roomClearances`).
  */
 export function RoomSplats(props: {
   spacing: number;
   scene: SceneAssets | null;
+  clearances: readonly Clearance[];
   onState?: (state: RoomLoadState) => void;
 }) {
   const gl = useThree((s) => s.gl);
   const spark = useMemo(() => new SparkRenderer({ renderer: gl }), [gl]);
-  const { spacing, scene, onState } = props;
+  const { spacing, scene, clearances, onState } = props;
 
   const mesh = useMemo(() => {
     const splat = scene?.manifest.splat;
@@ -74,9 +76,9 @@ export function RoomSplats(props: {
     });
   }, [spacing, scene, onState]);
 
-  // Hide the scan's clutter over game tables, so it doesn't poke through the puzzle.
+  // Keep the scan out of the space play surfaces and other features need.
   const clear = useMemo(() => {
-    const sdfs = tableClearances(scene?.manifest.tables ?? []).map((c) => {
+    const sdfs = clearances.map((c) => {
       const sdf = new SplatEditSdf({ type: SplatEditSdfType.BOX, opacity: 0 });
       sdf.position.set(...c.center);
       sdf.rotation.set(0, c.yaw, 0);
@@ -87,7 +89,7 @@ export function RoomSplats(props: {
     const edit = new SplatEdit({ rgbaBlendMode: SplatEditRgbaBlendMode.MULTIPLY, sdfs });
     for (const sdf of sdfs) edit.add(sdf);
     return edit;
-  }, [scene]);
+  }, [clearances]);
 
   useEffect(() => () => mesh.dispose(), [mesh]);
   useEffect(() => () => spark.dispose(), [spark]);
