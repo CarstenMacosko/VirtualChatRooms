@@ -129,6 +129,25 @@ export interface BuiltInRoom {
 }
 
 /**
+ * A short fingerprint of how a room looks (its parts). The room's exported 3D model records it, so
+ * a model left behind after the parts change is noticed (the client then draws the parts itself).
+ * Changing how a picture is painted doesn't change it: re-export the models by hand then.
+ */
+export function builtInRoomFingerprint(room: BuiltInRoom): string {
+  // FNV-1a over the parts as JSON, numbers rounded to a micrometer: trigonometry can differ in
+  // the last bits between JavaScript engines (the browser that exports, Node that tests).
+  const text = JSON.stringify(room.parts, (_key, value: unknown) =>
+    typeof value === "number" ? Math.round(value * 1e6) / 1e6 : value,
+  );
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/**
  * A point `inset` meters in from an oval wall (half widths `rx`, `rz`) at `angle` around it: 0 is
  * +Z, π/2 is +X. `yaw` faces into the room.
  */

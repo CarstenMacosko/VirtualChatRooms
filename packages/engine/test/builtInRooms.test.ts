@@ -1,9 +1,17 @@
+// Reads the exported room models from disk (Node APIs, in this test only).
+/// <reference types="node" />
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CHARACTER } from "../src/locomotion/CharacterController";
 import { PhysicsWorld } from "../src/locomotion/physics";
 import { inFrontOfSeat, standSpot } from "../src/locomotion/sitting";
 import type { Vec3 } from "../src/math";
-import { type BuiltInRoom, builtInRoomColliders } from "../src/room/builtInRoom";
+import {
+  type BuiltInRoom,
+  builtInRoomColliders,
+  builtInRoomFingerprint,
+} from "../src/room/builtInRoom";
 import { BUILT_IN_ROOMS, builtInLayout, builtInRoom } from "../src/room/builtInRooms";
 import { roomClearances } from "../src/room/playSurface";
 import { spawnPointFor } from "../src/room/scannedRoom";
@@ -173,4 +181,26 @@ describe("built-in room ids", () => {
   it("give the presentation hall a projector screen", () => {
     expect(builtInRoom("presentation").parts.some((p) => p.kind === "screen")).toBe(true);
   });
+});
+
+describe("built-in room models", () => {
+  /** The scene extras of a .glb's JSON chunk. */
+  const sceneExtras = (path: string) => {
+    const glb = readFileSync(path);
+    const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString("utf8")) as {
+      scenes: Array<{ extras?: { fingerprint?: string } }>;
+    };
+    return json.scenes[0]?.extras;
+  };
+
+  it.each(Object.keys(BUILT_IN_ROOMS))(
+    "%s.glb is exported from the room's current parts (re-export with vcrExportRoomModels())",
+    (id) => {
+      const room = builtInRoom(id as BuiltInRoom["id"]);
+      const path = fileURLToPath(
+        new URL(`../../../apps/web/public/rooms/${id}.glb`, import.meta.url),
+      );
+      expect(sceneExtras(path)?.fingerprint).toBe(builtInRoomFingerprint(room));
+    },
+  );
 });
