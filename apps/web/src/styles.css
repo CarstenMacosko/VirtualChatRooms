@@ -126,6 +126,23 @@ input {
   border-radius: 10px;
   margin: 0;
 }
+/* Above everything, clear of the call controls and the phone's home bar. */
+.update-banner {
+  position: fixed;
+  z-index: 1000;
+  left: 50%;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 8px 8px 16px;
+  border-radius: 999px;
+  color: #fff;
+  background: #1d2433;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.3);
+}
 
 .labels {
   position: absolute;
