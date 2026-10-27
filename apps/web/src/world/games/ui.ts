@@ -1,3 +1,4 @@
+import { playSurface } from "@vcr/engine";
 import type { Table } from "@vcr/protocol";
 import type {
   Component,
@@ -50,7 +51,8 @@ export function playableTables(tables: readonly Table[]): PlayableTable[] {
   return tables.flatMap((t) => {
     const game = t.games.find((id) => CLIENT_GAMES[id]);
     if (!game) return [];
-    const frame: TableFrame = { center: t.center, yaw: t.yaw, size: t.size };
+    // Games draw on the table's play surface, over the scan's own bumpy top.
+    const frame: TableFrame = { center: playSurface(t).center, yaw: t.yaw, size: t.size };
     const module = CLIENT_GAMES[game]!;
     const { Scene, Hud, Start } = module.client;
     return [

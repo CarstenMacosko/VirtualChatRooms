@@ -5,7 +5,7 @@ import type { Vec3 } from "@vcr/engine";
 import type { TablePointer } from "@vcr/games-sdk";
 import type { ParticipantView, Table } from "@vcr/protocol";
 import type { TableGamesSync } from "../../lib/tableGames";
-import { sideOf, TABLETOP_CLEARANCE, worldToTable } from "./focus";
+import { sideOf, worldToTable } from "./focus";
 import {
   holderColor,
   type PlayableTable,
@@ -192,8 +192,8 @@ function usePlayPointer(
     const raycaster = new Raycaster();
     const ndc = new Vector2();
     const hit = new Vector3();
-    // Pieces lie a few millimeters above the games' surface.
-    const height = table.frame.center[1] + TABLETOP_CLEARANCE + 0.004;
+    // Pieces lie a few millimeters above the play surface.
+    const height = table.frame.center[1] + 0.004;
     const plane = new Plane(new Vector3(0, 1, 0), -height);
     const local = { x: 0, z: 0 };
     const project = (e: PointerEvent) => {

@@ -4,12 +4,11 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import { CanvasTexture, SRGBColorSpace } from "three";
 import { isComplete, type JigsawAction, type JigsawSetup } from "@vcr/games";
 import type { TableFrame, TablePointer, TableSceneProps } from "@vcr/games-sdk";
-import { TABLETOP_CLEARANCE } from "../focus";
 import { Confetti, PuzzlePieces } from "./PuzzlePieces";
 
 type Props = TableSceneProps<JigsawSetup, JigsawAction>;
 
-// Heights above the tabletop (meters), under the pieces.
+// Heights above the play surface (meters), under the pieces.
 const MAT_Y = 0.0008;
 const BOARD_Y = 0.0014;
 const GHOST_Y = 0.0019;
@@ -18,10 +17,7 @@ const GHOST_Y = 0.0019;
 export function JigsawScene(props: Props) {
   const { table, setup } = props;
   return (
-    <group
-      position={[table.center[0], table.center[1] + TABLETOP_CLEARANCE, table.center[2]]}
-      rotation-y={table.yaw}
-    >
+    <group position={table.center} rotation-y={table.yaw}>
       {setup ? (
         <Puzzle key={`${setup.seed}:${setup.cols}`} {...props} setup={setup} />
       ) : (

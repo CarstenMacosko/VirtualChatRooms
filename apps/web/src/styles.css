@@ -276,6 +276,8 @@ input {
   color: var(--text);
   font-size: 14px;
   touch-action: none;
+  /* Above the touch controls, whose look zone covers the right half where the touch button is. */
+  z-index: 2;
 }
 .seat-prompt kbd {
   display: inline-block;

@@ -47,6 +47,7 @@ import {
   walkwayBigEnough,
   walkwayColliders,
   yawTowards,
+  type Clearance,
 } from "@vcr/engine";
 import type { RoomSetup, SceneAssets, Seat, Table, Walkway } from "@vcr/protocol";
 import type { RoomCollision } from "./collision";
@@ -136,6 +137,9 @@ export interface SetupSceneProps {
 }
 
 type Controls = ComponentRef<typeof OrbitControls>;
+
+/** The editor shows the whole scan, so tables can be lined up with its real tabletops. */
+const NO_CLEARANCES: Clearance[] = [];
 type Draft =
   { kind: "walkway"; min: XZ; max: XZ } | { kind: "couch"; a: Vec3; b: Vec3; facing: XZ };
 
@@ -175,10 +179,15 @@ export function SetupScene(props: SetupSceneProps) {
       <ambientLight color={manifest.lighting.ambientColor} intensity={0.4} />
       <group ref={visual}>
         {manifest.mesh ? (
-          <RoomMesh scene={scene} onState={props.onRoomState} />
+          <RoomMesh scene={scene} clearances={NO_CLEARANCES} onState={props.onRoomState} />
         ) : (
           <>
-            <RoomSplats spacing={0.05} scene={scene} onState={props.onRoomState} />
+            <RoomSplats
+              spacing={0.05}
+              scene={scene}
+              clearances={NO_CLEARANCES}
+              onState={props.onRoomState}
+            />
             <CeilingCut height={manifest.bounds.max[1] - 0.3} />
           </>
         )}
