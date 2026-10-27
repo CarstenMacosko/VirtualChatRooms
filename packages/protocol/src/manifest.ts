@@ -98,6 +98,19 @@ export const Table = z.looseObject({
 });
 export type Table = z.infer<typeof Table>;
 
+/**
+ * A projector screen hung in the room (room setup): `center` is the middle of its face, which
+ * faces `yaw` (0 faces +Z). It shows whatever someone in the call is sharing.
+ */
+export const Screen = z.looseObject({
+  id: z.string().min(1).max(40),
+  center: Vec3,
+  yaw: z.number(),
+  /** [width, height], meters. */
+  size: z.tuple([z.number().min(0.3).max(8), z.number().min(0.2).max(5)]),
+});
+export type Screen = z.infer<typeof Screen>;
+
 const ZoneShape = z.discriminatedUnion("type", [
   z.looseObject({ type: z.literal("circle"), center: Vec3, radius: z.number().positive() }),
   z.looseObject({ type: z.literal("box"), min: Vec3, max: Vec3 }),
@@ -151,6 +164,7 @@ export const RoomManifest = z
     seats: z.array(Seat).default([]),
     walkways: z.array(Walkway).default([]),
     tables: z.array(Table).default([]),
+    screens: z.array(Screen).default([]),
     zones: z.array(Zone).default([]),
     lighting: z
       .looseObject({

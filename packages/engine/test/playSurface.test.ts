@@ -4,6 +4,8 @@ import {
   inClearance,
   playSurfaces,
   roomClearances,
+  SCREEN_BORDER,
+  screenClearance,
   SURFACE_HEADROOM,
   surfaceClearance,
 } from "../src/room/playSurface";
@@ -65,5 +67,33 @@ describe("play surfaces", () => {
     const [c] = roomClearances({ tables: [table(["jigsaw"], Math.PI / 2)] });
     expect(inClearance([1, TOP + 0.1, -2 + 0.55], c!)).toBe(true);
     expect(inClearance([1 + 0.55, TOP + 0.1, -2], c!)).toBe(false);
+  });
+});
+
+describe("projector screen clearances", () => {
+  // A 2 × 1.125 m screen on the east wall (x = 3), facing west (−X), 3 cm off the wall.
+  const screen = {
+    center: [2.97, 1.6, 0] as [number, number, number],
+    yaw: -Math.PI / 2,
+    size: [2, 1.125] as [number, number],
+  };
+
+  it("hide the wall behind the picture, bumps and all", () => {
+    const c = screenClearance(screen);
+    expect(inClearance([3.0, 1.6, 0], c)).toBe(true); // the wall
+    expect(inClearance([3.04, 1.2, 0.8], c)).toBe(true); // a bump near a corner
+    expect(inClearance([2.96, 1.6, 0], c)).toBe(true); // just in front of the face
+  });
+
+  it("keep the room in front, beside and behind it", () => {
+    const c = screenClearance(screen);
+    expect(inClearance([2.8, 1.6, 0], c)).toBe(false); // someone standing in front
+    expect(inClearance([3.1, 1.6, 0], c)).toBe(false); // behind the wall
+    expect(inClearance([3.0, 1.6, 1 + SCREEN_BORDER + 0.02], c)).toBe(false); // beside it
+    expect(inClearance([3.0, 1.6 + 0.5625 + SCREEN_BORDER + 0.02, 0], c)).toBe(false); // above
+  });
+
+  it("join the tables' in the room's clearances", () => {
+    expect(roomClearances({ tables: [], screens: [{ id: "s", ...screen }] })).toHaveLength(1);
   });
 });

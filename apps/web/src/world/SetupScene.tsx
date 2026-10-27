@@ -49,7 +49,7 @@ import {
   yawTowards,
   type Clearance,
 } from "@vcr/engine";
-import type { RoomSetup, SceneAssets, Seat, Table, Walkway } from "@vcr/protocol";
+import type { RoomSetup, SceneAssets, Screen, Seat, Table, Walkway } from "@vcr/protocol";
 import type { RoomCollision } from "./collision";
 import { RoomMesh } from "./RoomMesh";
 import { type RoomLoadState, RoomSplats } from "./RoomSplats";
@@ -61,20 +61,28 @@ import { type RoomLoadState, RoomSplats } from "./RoomSplats";
  * mesh rooms are also hit-tested against the visible mesh when a tap places something.
  */
 
-export type Tool = "select" | "walkway" | "seat" | "couch" | "table";
+export type Tool = "select" | "walkway" | "seat" | "couch" | "table" | "screen";
 export type Selection =
-  { kind: "walkway"; id: string } | { kind: "seat"; id: number } | { kind: "table"; id: string };
+  | { kind: "walkway"; id: string }
+  | { kind: "seat"; id: number }
+  | { kind: "table"; id: string }
+  | { kind: "screen"; id: string };
 type XZ = [number, number];
 type Edit = (setup: RoomSetup) => RoomSetup;
 
 /** The manifest's limits (`RoomSetup` in @vcr/protocol). */
-export const SETUP_LIMITS = { walkways: 64, seats: 200, tables: 16 };
+export const SETUP_LIMITS = { walkways: 64, seats: 200, tables: 16, screens: 4 };
 export const DEFAULT_TABLE_SIZE: [number, number] = [0.9, 0.6];
+/** A new projector screen: 2 m wide, 16:9. */
+export const DEFAULT_SCREEN_SIZE: [number, number] = [2, 1.125];
+/** How far a new screen hangs off the wall it was tapped on. */
+const SCREEN_OFF_WALL = 0.03;
 
 const COLORS = {
   walkway: "#3ecf8e",
   seat: "#f5a524",
   table: "#6ea8fe",
+  screen: "#c084fc",
   selected: "#ffffff",
   collision: "#9fb2d0",
 };
@@ -106,6 +114,9 @@ export const editTable =
     ...s,
     tables: s.tables.map((x) => (x.id === id ? { ...x, ...patch, source: "user" } : x)),
   });
+export const editScreen =
+  (id: string, patch: Partial<Screen>): Edit =>
+  (s) => ({ ...s, screens: s.screens.map((x) => (x.id === id ? { ...x, ...patch } : x)) });
 export const editWalkway =
   (id: string, patch: Partial<Walkway>): Edit =>
   (s) => ({ ...s, walkways: s.walkways.map((x) => (x.id === id ? { ...x, ...patch } : x)) });
@@ -115,6 +126,7 @@ export const removeItem =
     walkways: sel.kind === "walkway" ? s.walkways.filter((x) => x.id !== sel.id) : s.walkways,
     seats: sel.kind === "seat" ? s.seats.filter((x) => x.id !== sel.id) : s.seats,
     tables: sel.kind === "table" ? s.tables.filter((x) => x.id !== sel.id) : s.tables,
+    screens: sel.kind === "screen" ? s.screens.filter((x) => x.id !== sel.id) : s.screens,
   });
 
 export interface SetupSceneProps {
@@ -202,6 +214,13 @@ export function SetupScene(props: SetupSceneProps) {
           key={t.id}
           table={t}
           selected={selected?.kind === "table" && selected.id === t.id}
+        />
+      ))}
+      {setup.screens.map((s) => (
+        <ScreenMarker
+          key={s.id}
+          screen={s}
+          selected={selected?.kind === "screen" && selected.id === s.id}
         />
       ))}
       {setup.seats.map((s) => (
@@ -409,6 +428,24 @@ function Gestures(
       const floor = raycaster.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), 0), hit);
       return floor ? roundVec(floor) : null;
     };
+    /** Like `pick` (without the floor), with the surface's normal: for hanging screens on walls. */
+    const pickFace = (e: PointerEvent): { point: Vector3; normal: Vector3 | null } | null => {
+      aim(e);
+      const { visual, pickMesh, scene } = latest.current;
+      const targets = [
+        ...(scene.manifest.mesh && visual.current ? [visual.current] : []),
+        ...(pickMesh ? [pickMesh] : []),
+      ];
+      for (const target of targets) {
+        const [first] = raycaster.intersectObject(target, true);
+        if (!first) continue;
+        const normal = first.face
+          ? first.face.normal.clone().transformDirection(first.object.matrixWorld)
+          : null;
+        return { point: first.point.clone(), normal };
+      }
+      return null;
+    };
     /** Screen distance (CSS pixels) from the pointer to a world point. */
     const screenDistance = (e: PointerEvent, p: Vec3) => {
       const rect = get().gl.domElement.getBoundingClientRect();
@@ -430,15 +467,31 @@ function Gestures(
       return [(min[0] + max[0]) / 2, (min[2] + max[2]) / 2];
     };
 
-    /** The seat, table or walkway under the pointer (seats first: they're smallest). */
+    /** Whether the pointer (already aimed) is on a screen's face. */
+    const onScreen = (s: Screen) => {
+      const facing = new Vector3(Math.sin(s.yaw), 0, Math.cos(s.yaw));
+      const center = new Vector3(...s.center);
+      const p = raycaster.ray.intersectPlane(
+        new Plane().setFromNormalAndCoplanarPoint(facing, center),
+        hit,
+      );
+      if (!p) return false;
+      const d = p.sub(center);
+      const across = d.x * Math.cos(s.yaw) - d.z * Math.sin(s.yaw);
+      return Math.abs(across) <= s.size[0] / 2 && Math.abs(d.y) <= s.size[1] / 2;
+    };
+
+    /** The seat, screen, table or walkway under the pointer (seats first: they're smallest). */
     const itemAt = (e: PointerEvent): Selection | null => {
       const { setup } = latest.current;
+      aim(e);
       let best: { id: number; d: number } | null = null;
       for (const s of setup.seats) {
         const d = screenDistance(e, s.position);
         if (d <= HANDLE_REACH && (!best || d < best.d)) best = { id: s.id, d };
       }
       if (best) return { kind: "seat", id: best.id };
+      for (const s of setup.screens) if (onScreen(s)) return { kind: "screen", id: s.id };
       for (const t of setup.tables) {
         const p = onPlane(e, t.center[1]);
         if (p && inTable(t, ...p)) return { kind: "table", id: t.id };
@@ -651,6 +704,37 @@ function Gestures(
         };
         onEdit((s) => ({ ...s, seats: [...s.seats, seat] }));
         return onSelect({ kind: "seat", id: seat.id });
+      }
+      if (tool === "screen" && item?.kind !== "screen") {
+        if (setup.screens.length >= SETUP_LIMITS.screens) {
+          return onNotice(`A room can have up to ${SETUP_LIMITS.screens} screens.`);
+        }
+        const surface = pickFace(e);
+        if (!surface) return onNotice("Tap a wall to hang the screen on it.");
+        const { point: p, normal } = surface;
+        // Facing out of the wall, toward the side the owner is looking from.
+        const cam = get().camera.position;
+        let n: XZ = normal ? [normal.x, normal.z] : [0, 0];
+        if (n[0] * (cam.x - p.x) + n[1] * (cam.z - p.z) < 0) n = [-n[0], -n[1]];
+        const yaw =
+          Math.hypot(...n) > 0.5
+            ? Math.atan2(n[0], n[1])
+            : yawTowards([p.x, p.z], viewpoint([p.x, p.y, p.z]));
+        const [w, h] = DEFAULT_SCREEN_SIZE;
+        const { max } = latest.current.scene.manifest.bounds;
+        const lowest = h / 2 + 0.4;
+        const screen: Screen = {
+          id: newSetupId(setup.screens.map((s) => s.id)),
+          center: [
+            round(p.x + Math.sin(yaw) * SCREEN_OFF_WALL),
+            round(Math.min(Math.max(p.y, lowest), Math.max(max[1] - h / 2 - 0.05, lowest))),
+            round(p.z + Math.cos(yaw) * SCREEN_OFF_WALL),
+          ],
+          yaw: Math.round(yaw * 1000) / 1000,
+          size: [w, h],
+        };
+        onEdit((s) => ({ ...s, screens: [...s.screens, screen] }));
+        return onSelect({ kind: "screen", id: screen.id });
       }
       if (tool === "table" && item?.kind !== "table") {
         if (setup.tables.length >= SETUP_LIMITS.tables) {
@@ -1003,6 +1087,26 @@ function TableMarker({ table, selected }: { table: Table; selected: boolean }) {
         </>
       )}
     </>
+  );
+}
+
+function ScreenMarker({ screen, selected }: { screen: Screen; selected: boolean }) {
+  const [w, h] = screen.size;
+  const color = selected ? COLORS.selected : COLORS.screen;
+  const overlay = { toneMapped: false, depthTest: false, depthWrite: false, side: DoubleSide };
+  return (
+    <group position={screen.center} rotation-y={screen.yaw}>
+      {/* A frame and a see-through face, drawn over the scan so they're never hidden in it. */}
+      <mesh renderOrder={OVERLAY}>
+        <planeGeometry args={[w + 0.06, h + 0.06]} />
+        <meshBasicMaterial color={color} transparent opacity={0.9} {...overlay} />
+      </mesh>
+      <mesh renderOrder={OVERLAY + 1}>
+        <planeGeometry args={[w, h]} />
+        <meshBasicMaterial color="#1b1530" transparent opacity={0.75} {...overlay} />
+      </mesh>
+      <Label text="Screen" position={[0, h / 2 + 0.12, 0]} />
+    </group>
   );
 }
 

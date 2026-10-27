@@ -1,4 +1,4 @@
-import type { ManifestTransform, RoomManifest, Seat, Table, Walkway } from "@vcr/protocol";
+import type { ManifestTransform, RoomManifest, Screen, Seat, Table, Walkway } from "@vcr/protocol";
 import type { Vec3 } from "../math";
 
 /**
@@ -15,6 +15,8 @@ export interface RoomLayout {
   tables: Table[];
   /** Floor kept walkable through the collision mesh (world X/Z rectangles). */
   walkways: Walkway[];
+  /** Projector screens hung in a scan (built-in rooms draw theirs as parts). */
+  screens?: Screen[];
   /** How far apart people appear around a spawn point (x, z); scans promise less open floor. */
   spawnSpread?: [number, number];
 }
@@ -27,6 +29,7 @@ export function scannedRoomLayout(manifest: RoomManifest): RoomLayout {
     seats: manifest.seats,
     tables: manifest.tables,
     walkways: manifest.walkways,
+    screens: manifest.screens,
   };
 }
 

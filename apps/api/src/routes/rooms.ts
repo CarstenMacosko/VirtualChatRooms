@@ -146,6 +146,10 @@ export function setupProblem(setup: RoomSetup, manifest: RoomManifest): string |
     const [x, y, z] = table.center;
     if (!inside(x, z) || !height(y)) return "A table is outside the room.";
   }
+  for (const screen of setup.screens) {
+    const [x, y, z] = screen.center;
+    if (!inside(x, z) || !height(y)) return "A screen is outside the room.";
+  }
   return null;
 }
 
@@ -357,7 +361,7 @@ export function roomRoutes(app: FastifyInstance, ctx: Services) {
     return scene;
   });
 
-  // Walkways, seats and game tables. Gatherings already running pick it up when people rejoin.
+  // Walkways, seats, game tables and projector screens. Gatherings already running pick it up when people rejoin.
   app.put<IdParams>("/rooms/:id/setup", auth, async (req, reply) => {
     const body = parseBody(RoomSetup, req, reply);
     if (!body) return;
@@ -375,7 +379,12 @@ export function roomRoutes(app: FastifyInstance, ctx: Services) {
     const next = parseRoomManifest({ ...manifest, ...body });
     await storage.put(room.manifestKey, JSON.stringify(next), "application/json");
     changed(me(req));
-    return { walkways: next.walkways, seats: next.seats, tables: next.tables } satisfies RoomSetup;
+    return {
+      walkways: next.walkways,
+      seats: next.seats,
+      tables: next.tables,
+      screens: next.screens,
+    } satisfies RoomSetup;
   });
 
   // Deleting a room deletes its files. A gathering in it ends first.
