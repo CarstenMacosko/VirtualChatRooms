@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { Suspense, useState } from "react";
 import {
   applySelfie,
   CLOTHING_COLORS,
@@ -19,10 +19,11 @@ import {
   Hat,
   Top,
 } from "@vcr/protocol";
+import { lazyChunk } from "../lib/lazyChunk";
 import { SelfieAssist } from "./SelfieAssist";
 
 // three.js and the avatar runtime load only when someone opens the creator.
-const AvatarPreview = lazy(() => import("../world/AvatarPreview"));
+const AvatarPreview = lazyChunk(() => import("../world/AvatarPreview"));
 
 type Tab = "selfie" | "face" | "hair" | "body" | "outfit" | "extras";
 const TABS: { id: Tab; label: string }[] = [

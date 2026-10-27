@@ -77,6 +77,8 @@ export const DEFAULT_TABLE_SIZE: [number, number] = [0.9, 0.6];
 export const DEFAULT_SCREEN_SIZE: [number, number] = [2, 1.125];
 /** How far a new screen hangs off the wall it was tapped on. */
 const SCREEN_OFF_WALL = 0.03;
+/** Largest |normal.y| of a surface that still counts as a wall (up to about 33° from upright). */
+const MAX_WALL_TILT = 0.55;
 
 const COLORS = {
   walkway: "#3ecf8e",
@@ -712,6 +714,10 @@ function Gestures(
         const surface = pickFace(e);
         if (!surface) return onNotice("Tap a wall to hang the screen on it.");
         const { point: p, normal } = surface;
+        // Only on something upright: a tabletop or the floor is no place for a screen.
+        if (normal && Math.abs(normal.y) > MAX_WALL_TILT) {
+          return onNotice("That isn't a wall. Tap a wall to hang the screen on it.");
+        }
         // Facing out of the wall, toward the side the owner is looking from.
         const cam = get().camera.position;
         let n: XZ = normal ? [normal.x, normal.z] : [0, 0];
